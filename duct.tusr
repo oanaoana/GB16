@@ -1,0 +1,199 @@
+!-----------------------------------------------------------------------
+    subroutine uservp(ix,iy,iz,eg) ! set variable properties
+
+    return
+    end subroutine uservp
+!-----------------------------------------------------------------------
+    subroutine userf(ix,iy,iz,eg) ! set acceleration term
+    use nekuse, only : ffx, ffy, ffz, temp
+    use kinds, only : DP
+    implicit none
+
+!     Note: this is an acceleration term, NOT a force!
+!     Thus, ffx will subsequently be multiplied by rho(x,t).
+
+    integer :: ix, iy, iz, eg
+    common /myvalues/ rayleigh, atwood, kmax, kmin, amp0, delta
+    real(DP) :: rayleigh, atwood, amp0, delta
+    integer :: kmax, kmin
+
+    ffx = 0.0
+    ffy = 0.0
+    ffz = 0.0
+
+    return
+    end subroutine userf
+!-----------------------------------------------------------------------
+    subroutine userq(ix,iy,iz,eg) ! set source term
+
+    return
+    end subroutine userq
+!-----------------------------------------------------------------------
+    subroutine userq2(q) ! set source term
+
+    return
+    end subroutine userq2
+!-----------------------------------------------------------------------
+    subroutine userbc(ix,iy,iz,iside,ieg) ! set up boundary conditions
+    use nekuse, only : ux, uy, uz, temp, x, y, z
+
+    ux = 0.0
+    uy = 0.0
+    uz = 0.0
+
+    return
+    end subroutine userbc
+!-----------------------------------------------------------------------
+    subroutine useric(ix,iy,iz,eg) ! set up initial conditions
+!      use ifport, only : random_number, random_seed
+    use kinds, only : DP
+    use nekuse, only : x, y, z, ux, uy, uz, temp
+    use tstep, only : pi
+    implicit none
+    integer :: ix, iy, iz, eg
+    real(DP) :: AR_ic, coeff_ic, H_ic, w_ic, a_ic, L_ic, ys_ic, xs_ic
+    real(DP) :: wso_ic, alpha1_ic, alpha2_ic, ws1_ic, ws2_ic, wstotal_ic
+
+!   H_icis the height of the duct, W_ic is the width, AR is the ratio
+
+!     Duct aspect ratio
+       AR_ic=1
+
+!     Coefficient for Ub=1
+       coeff_ic=34.284065021962256
+
+!     Geometry
+       H_ic=1
+       w_ic=AR_ic*H_ic
+       a_ic=1./AR_ic
+       L_ic=w_ic/2.
+       ys_ic=y/L_ic
+       xs_ic=x/L_ic
+
+!     Laminar duct profile from Panton
+!     Leading order term
+       wso_ic=1./2.*(a_ic**2.-ys_ic**2.)
+
+!     Parameter alpha for first and second order terms
+       alpha1_ic=(2.*1.-1.)*pi/(2.*a_ic)
+       alpha2_ic=(2.*2.-1.)*pi/(2.*a_ic)
+
+!     First and second order terms
+       ws1_ic=2./a_ic*(-1)/(alpha1_ic)**3.*cos(alpha1_ic*ys_ic) &
+              *(exp(alpha1_ic*(xs_ic-1.))+exp(-alpha1_ic*(xs_ic+1.))) &
+              /(1+exp(-2.*alpha1_ic))
+       ws2_ic=2./a_ic*(1)/(alpha2_ic)**3.*cos(alpha2_ic*ys_ic) &
+              *(exp(alpha2_ic*(xs_ic-1.))+exp(-alpha2_ic*(xs_ic+1.))) &
+              /(1+exp(-2.*alpha2_ic))
+
+!     Sum of leading, first and second order terms
+       wstotal_ic=wso_ic+ws1_ic+ws2_ic
+
+!     Initial conditions: laminar profile
+       ux=0.
+       uy=0.
+       uz=coeff_ic*wstotal_ic
+!      uz=3.0/2.0*(1.0-y**2)
+    
+    temp = erf((x-{root_mesh[0]})/({extent_mesh[0]}-{root_mesh[0]})/2.) + 1
+
+    return
+    end subroutine useric
+!-----------------------------------------------------------------------
+    subroutine userchk()
+    use kinds, only : DP
+    use size_m, only : lx1, ly1, lz1, lelt
+    use tstep, only : istep
+    use input, only : param, ifxyo
+    use parallel, only : nid
+    use soln, only : vx, vy, vz, pr, t
+    implicit none
+
+    real(DP), external :: glmax, glmin
+    real(DP) :: tmax, wmax
+
+    if (param(69) < 1 .and. istep == 0) call outpost(vx,vy,vz,pr,t,'   ')
+    ifxyo = .false.
+    if (mod(istep, 8) == 0) call runstat()
+
+    tmax = max(glmax(t, lx1*ly1*lz1*lelt), -glmin(t, lx1*ly1*lz1*lelt))
+    if (nid == 0) write(*,*) "Maximum point-wise scalar", tmax
+    wmax = max(glmax(vz, lx1*ly1*lz1*lelt), -glmin(vz, lx1*ly1*lz1*lelt))
+    if (nid == 0) write(*,*) "Maximum vertical velocity", wmax
+
+
+    return
+    end subroutine userchk
+!-----------------------------------------------------------------------
+    subroutine usrdat()   ! This routine to modify element vertices
+      use kinds, only : DP
+      use parallel, only : nid
+      use size_m, only : nelt
+      use input, only : xc, yc, zc
+      use mesh, only : shape_x
+      use mesh, only : ticks_x, ticks_y, ticks_z
+      use parallel, only : lglel
+      use tstep, only : pi
+      implicit none
+
+      integer :: iel, ieg
+      integer :: i
+      integer :: ix(3)
+
+      do i = 1, shape_x(1)-1
+        ticks_x(i) = sin(ticks_x(i)*(pi - {alpha[0]}/2.)) / sin(pi/2. - {alpha[0]})
+      enddo
+      do i = 1, shape_x(2)-1
+        ticks_y(i) = sin(ticks_y(i)*(pi - {alpha[1]}/2.)) / sin(pi/2. - {alpha[1]})
+      enddo
+
+      do iel = 1, nelt
+        ieg = lglel(iel)
+
+        ix(1) = mod(ieg - 1, shape_x(1))
+        ix(2) = mod((ieg-1)/shape_x(1), shape_x(2))
+        ix(3) = mod((ieg-1)/(shape_x(1)*shape_x(2)), shape_x(3))
+
+        XC(1,iel) = ticks_x(ix(1))
+        XC(2,iel) = ticks_x(ix(1)+1)
+        XC(3,iel) = ticks_x(ix(1)+1)
+        XC(4,iel) = ticks_x(ix(1))
+        XC(5,iel) = ticks_x(ix(1))
+        XC(6,iel) = ticks_x(ix(1)+1)
+        XC(7,iel) = ticks_x(ix(1)+1)
+        XC(8,iel) = ticks_x(ix(1))
+
+        YC(1,iel) = ticks_y(ix(2))
+        YC(2,iel) = ticks_y(ix(2))
+        YC(3,iel) = ticks_y(ix(2)+1)
+        YC(4,iel) = ticks_y(ix(2)+1)
+        YC(5,iel) = ticks_y(ix(2))
+        YC(6,iel) = ticks_y(ix(2))
+        YC(7,iel) = ticks_y(ix(2)+1)
+        YC(8,iel) = ticks_y(ix(2)+1)
+
+        ZC(1,iel) = ticks_z(ix(3))
+        ZC(2,iel) = ticks_z(ix(3))
+        ZC(3,iel) = ticks_z(ix(3))
+        ZC(4,iel) = ticks_z(ix(3))
+        ZC(5,iel) = ticks_z(ix(3)+1)
+        ZC(6,iel) = ticks_z(ix(3)+1)
+        ZC(7,iel) = ticks_z(ix(3)+1)
+        ZC(8,iel) = ticks_z(ix(3)+1)
+      enddo
+
+    return
+    end subroutine usrdat
+!-----------------------------------------------------------------------
+    subroutine usrdat2()  ! This routine to modify mesh coordinates
+     use kinds, only : DP
+     implicit none
+
+    return
+    end subroutine usrdat2
+!-----------------------------------------------------------------------
+    subroutine usrdat3()
+
+    return
+    end subroutine usrdat3
+!-----------------------------------------------------------------------
