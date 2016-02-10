@@ -53,49 +53,49 @@
 
 !   H_icis the height of the duct, W_ic is the width, AR is the ratio
 
-!     Duct aspect ratio
-       AR_ic=1
+!   Coefficient for Ub=1
+    coeff_ic=34.284065021962256
 
-!     Coefficient for Ub=1
-       coeff_ic=34.284065021962256
+!   Geometry
+    H_ic = {extent_mesh[0]} - {root_mesh[0]}
+    W_ic = {extent_mesh[1]} - {root_mesh[1]}
+    AR_ic = w_ic / H_ic
+    w_ic=AR_ic*H_ic
+    a_ic=1./AR_ic
+    L_ic=w_ic/2.
+    ys_ic=y/L_ic
+    xs_ic=x/L_ic
 
-!     Geometry
-       H_ic=1
-       w_ic=AR_ic*H_ic
-       a_ic=1./AR_ic
-       L_ic=w_ic/2.
-       ys_ic=y/L_ic
-       xs_ic=x/L_ic
+    ! Laminar duct profile from Panton
+    ! Leading order term
+    wso_ic=1./2.*(a_ic**2.-ys_ic**2.)
 
-!     Laminar duct profile from Panton
-!     Leading order term
-       wso_ic=1./2.*(a_ic**2.-ys_ic**2.)
+    ! Parameter alpha for first and second order terms
+    alpha1_ic=(2.*1.-1.)*pi/(2.*a_ic)
+    alpha2_ic=(2.*2.-1.)*pi/(2.*a_ic)
 
-!     Parameter alpha for first and second order terms
-       alpha1_ic=(2.*1.-1.)*pi/(2.*a_ic)
-       alpha2_ic=(2.*2.-1.)*pi/(2.*a_ic)
+    ! First and second order terms
+    ws1_ic=2./a_ic*(-1)/(alpha1_ic)**3.*cos(alpha1_ic*ys_ic) &
+           *(exp(alpha1_ic*(xs_ic-1.))+exp(-alpha1_ic*(xs_ic+1.))) &
+           /(1+exp(-2.*alpha1_ic))
+    ws2_ic=2./a_ic*(1)/(alpha2_ic)**3.*cos(alpha2_ic*ys_ic) &
+           *(exp(alpha2_ic*(xs_ic-1.))+exp(-alpha2_ic*(xs_ic+1.))) &
+           /(1+exp(-2.*alpha2_ic))
 
-!     First and second order terms
-       ws1_ic=2./a_ic*(-1)/(alpha1_ic)**3.*cos(alpha1_ic*ys_ic) &
-              *(exp(alpha1_ic*(xs_ic-1.))+exp(-alpha1_ic*(xs_ic+1.))) &
-              /(1+exp(-2.*alpha1_ic))
-       ws2_ic=2./a_ic*(1)/(alpha2_ic)**3.*cos(alpha2_ic*ys_ic) &
-              *(exp(alpha2_ic*(xs_ic-1.))+exp(-alpha2_ic*(xs_ic+1.))) &
-              /(1+exp(-2.*alpha2_ic))
+    ! Sum of leading, first and second order terms
+    wstotal_ic=wso_ic+ws1_ic+ws2_ic
 
-!     Sum of leading, first and second order terms
-       wstotal_ic=wso_ic+ws1_ic+ws2_ic
-
-!     Initial conditions: laminar profile
-       ux=0.
-       uy=0.
-       uz=coeff_ic*wstotal_ic
-!      uz=3.0/2.0*(1.0-y**2)
+    ! Initial conditions: laminar profile
+    ux=0.
+    uy=0.
+    uz=coeff_ic*wstotal_ic * {velocity}
+    if (x < 0) ux = uz * 0.0001
+    ! uz=3.0/2.0*(1.0-y**2)
     
     temp = erf((x-{root_mesh[0]})/({extent_mesh[0]}-{root_mesh[0]})/2.) 
 
     return
-    end subroutine useric
+  end subroutine useric
 !-----------------------------------------------------------------------
     subroutine userchk()
     use kinds, only : DP
@@ -111,7 +111,7 @@
 
     if (param(69) < 1 .and. istep == 0) call outpost(vx,vy,vz,pr,t,'   ')
     ifxyo = .false.
-    if (mod(istep, 8) == 0) call runstat()
+    if (mod(istep, 32) == 0) call runstat()
 
     tmax = max(glmax(t, lx1*ly1*lz1*lelt), -glmin(t, lx1*ly1*lz1*lelt))
     if (nid == 0) write(*,*) "Maximum point-wise scalar", tmax
