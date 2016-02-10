@@ -16,8 +16,8 @@
   "tolrel": 1e-04,
   "front_bound": "W",
   "wait_vel": 2.0,
-  "io_files": -4.0,
-  "dealiasing_order": 12,
+  "io_files": -6144.0,
+  "dealiasing_order": 48,
   "right_bound": "W",
   "bottom_bound": "P",
   "ngmres": 16,
@@ -29,18 +29,18 @@
     1.0,
     1.0
   ],
-  "conductivity": 0.013793,
+  "conductivity": 0.0004,
   "dt": 1e-4,
   "left_bound": "W",
   "num_steps": 64.0,
   "max_fft_procs": 0,
-  "cps": 0.0,
+  "cps": -2.0,
   "shape_mesh": [
-    16,
-    16,
-    96
+    64,
+    64,
+    384
   ],
-  "order": 8,
+  "order": 32,
   "tolabs": 1e-08,
   "nvel": 4,
   "uservp": 0,
@@ -60,9 +60,9 @@
   ],
   "toldiv": 0.0,
   "dim": 3,
-  "procs": 32,
+  "procs": 98304,
   "back_bound": "W",
   "io_step": 32.0,
-  "viscosity": 0.013793,
+  "viscosity": 0.000013793,
   "num_fields": 2
 }
