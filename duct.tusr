@@ -13,9 +13,6 @@
 !     Thus, ffx will subsequently be multiplied by rho(x,t).
 
     integer :: ix, iy, iz, eg
-    common /myvalues/ rayleigh, atwood, kmax, kmin, amp0, delta
-    real(DP) :: rayleigh, atwood, amp0, delta
-    integer :: kmax, kmin
 
     ffx = 0.0
     ffy = 0.0
@@ -95,7 +92,7 @@
        uz=coeff_ic*wstotal_ic
 !      uz=3.0/2.0*(1.0-y**2)
     
-    temp = erf((x-{root_mesh[0]})/({extent_mesh[0]}-{root_mesh[0]})/2.) + 1
+    temp = erf((x-{root_mesh[0]})/({extent_mesh[0]}-{root_mesh[0]})/2.) 
 
     return
     end subroutine useric
@@ -141,10 +138,10 @@
       integer :: ix(3)
 
       do i = 1, shape_x(1)-1
-        ticks_x(i) = sin(ticks_x(i)*(pi - {alpha[0]}/2.)) / sin(pi/2. - {alpha[0]})
+        ticks_x(i) = .5*sin(ticks_x(i)*(pi - 2.*{alpha[0]})) / sin(pi/2. - {alpha[0]})
       enddo
       do i = 1, shape_x(2)-1
-        ticks_y(i) = sin(ticks_y(i)*(pi - {alpha[1]}/2.)) / sin(pi/2. - {alpha[1]})
+        ticks_y(i) = .5*sin(ticks_y(i)*(pi - 2.*{alpha[1]})) / sin(pi/2. - {alpha[1]})
       enddo
 
       do iel = 1, nelt
