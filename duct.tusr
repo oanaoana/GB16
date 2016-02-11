@@ -5,18 +5,55 @@
     end subroutine uservp
 !-----------------------------------------------------------------------
     subroutine userf(ix,iy,iz,eg) ! set acceleration term
-    use nekuse, only : ffx, ffy, ffz, temp
+    use nekuse, only : x, y, z, ffx, ffy, ffz, temp
     use kinds, only : DP
+    use tstep, only : time
     implicit none
 
 !     Note: this is an acceleration term, NOT a force!
 !     Thus, ffx will subsequently be multiplied by rho(x,t).
 
     integer :: ix, iy, iz, eg
+    real(DP) :: tt, amp
+    real(DP) :: x0, y0, z0, r
+    tt = 2.5
+    amp = 0.4
 
+    ! only trip in y direction
     ffx = 0.0
-    ffy = 0.0
     ffz = 0.0
+
+    ! only trip at early times
+    if (time >= tt) then
+      ffy = 0.0
+      return
+    endif
+
+    y0 = 0.0
+    x0 = 0.2*sin(2*time+3)
+    z0 = 1.0
+    r=(x-x0)**2+(y-y0)**2+(z-z0)**2
+    ffy = amp*sin(5*z+11.4*x+3*time+3)*exp(-8*r)
+
+    x0 = 0.2*sin(2*time+1)
+    z0 = 1.0+2.5
+    r=(x-x0)**2+(y-y0)**2+(z-z0)**2
+    ffy = ffy+amp*sin(-3.5566*z+10*x+3*time)*exp(-8*r)
+
+    x0 = 0.2*sin(2*time)
+    z0 = 1.0+5
+    r=(x-x0)**2+(y-y0)**2+(z-z0)**2
+    ffy = ffy+amp*sin(6.134*z+9.31*x+3*time+8)*exp(-8*r)
+
+    x0 = 0.2*sin(2*time+8)
+    z0 = 1.0+7.5
+    r=(x-x0)**2+(y-y0)**2+(z-z0)**2
+    ffy = ffy+amp*sin(-7.12*z+10.1*x+3*time+15)*exp(-8*r)
+
+    x0 = 0.2*sin(2*time+15)
+    z0 = 1.0+10
+    r=(x-x0)**2+(y-y0)**2+(z-z0)**2
+    ffy = ffy+amp*sin(4.98*z+9.87*x+3*time)*exp(-8*r)
 
     return
     end subroutine userf
@@ -89,7 +126,6 @@
     ux=0.
     uy=0.
     uz=coeff_ic*wstotal_ic * {velocity}
-    if (x < 0) ux = uz * 0.0001
     ! uz=3.0/2.0*(1.0-y**2)
     
     temp = erf((x-{root_mesh[0]})/({extent_mesh[0]}-{root_mesh[0]})/2.) 
