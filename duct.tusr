@@ -173,12 +173,20 @@
       integer :: i
       integer :: ix(3)
 
-      do i = 1, shape_x(1)-1
-        ticks_x(i) = .5*sin(ticks_x(i)*(pi - 2.*{alpha[0]})) / sin(pi/2. - {alpha[0]})
-      enddo
-      do i = 1, shape_x(2)-1
-        ticks_y(i) = .5*sin(ticks_y(i)*(pi - 2.*{alpha[1]})) / sin(pi/2. - {alpha[1]})
-      enddo
+
+      if ({alpha[0]} >= 0) then
+        do i = 1, shape_x(1)-1
+          ticks_x(i) = .5*sin(ticks_x(i)*(pi - 2.*{alpha[0]})) / sin(pi/2. - {alpha[0]})
+        enddo
+      endif
+      if (nid == 0) write(*,*) ticks_x
+
+      if ({alpha[1]} >= 0) then
+        do i = 1, shape_x(2)-1
+          ticks_y(i) = .5*sin(ticks_y(i)*(pi - 2.*{alpha[1]})) / sin(pi/2. - {alpha[1]})
+        enddo
+      endif
+      if (nid == 0) write(*,*) ticks_y
 
       do iel = 1, nelt
         ieg = lglel(iel)

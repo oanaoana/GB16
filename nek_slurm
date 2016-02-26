@@ -1,0 +1,38 @@
+cd $6
+echo $1        >  SESSION.NAME
+echo `pwd`'/' >>  SESSION.NAME
+echo $2       >>  SESSION.NAME
+touch $1.rea
+rm ioinfo
+mv $1.log.$3 $1.log1.$3
+mv $1.his $1.his1
+mv $1.sch $1.sch1
+rm $1.output
+rm logfile
+rm xxt_map.rea
+rm logfile
+touch $1.log.$3
+ln $1.log.$3 $1.output
+ln $1.log.$3 logfile
+
+echo "#!/bin/sh " > tmp.job
+echo "#SBATCH --time=${5}:00" >> tmp.job
+#echo "#SBATCH --output=${1}.output" >> tmp.job
+#echo "#SBATCH --error=${1}.error" >> tmp.job
+#echo "#SBATCH --job-name=${1}" >> tmp.job
+echo "#SBATCH --nodes=${3}" >> tmp.job
+echo "export MPICH_USE_DMAPP_COLL=1" >> tmp.job
+echo "srun --ntasks=$(( ${3} * ${4})) --hint=nomultithread --ntasks-per-node=${4} --ntasks-per-socket=$((${4} / 2)) nek5000" >> tmp.job
+echo "touch DONE" >> tmp.job
+rm -f DONE
+here=`pwd`
+jobid=`sbatch -A k1123 -D $here tmp.job 2>&1 | egrep -o -e "\b[0-9]+$"`
+
+echo $jobid
+while [ ! -f DONE ]
+do
+  sleep 1
+done
+
+echo $jobid >> ${1}.error
+

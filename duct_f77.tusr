@@ -1,0 +1,231 @@
+C-----------------------------------------------------------------------
+      subroutine uservp(ix,iy,iz,eg) ! set variable properties
+     
+      return
+      end subroutine uservp
+C-----------------------------------------------------------------------
+      subroutine userf(ix,iy,iz,eg) ! set acceleration term
+      include 'SIZE'
+      include 'NEKUSE'
+      include 'TSTEP'
+     
+      integer  ix, iy, iz, eg
+      real  tt, amp
+      real  x0, y0, z0, r
+      tt = 2.5
+      amp = 0.4
+
+c only trip in y direction
+      ffx = 0.0
+      ffz = 0.0
+
+c only trip at early times
+      if (time >= tt) then
+        ffy = 0.0
+        return
+      endif
+
+      y0 = 0.0
+      x0 = 0.2*sin(2*time+3)
+      z0 = 1.0
+      r=(x-x0)**2+(y-y0)**2+(z-z0)**2
+      ffy = amp*sin(5*z+11.4*x+3*time+3)*exp(-8*r)
+     
+      x0 = 0.2*sin(2*time+1)
+      z0 = 1.0+2.5
+      r=(x-x0)**2+(y-y0)**2+(z-z0)**2
+      ffy = ffy+amp*sin(-3.5566*z+10*x+3*time)*exp(-8*r)
+     
+      x0 = 0.2*sin(2*time)
+      z0 = 1.0+5
+      r=(x-x0)**2+(y-y0)**2+(z-z0)**2
+      ffy = ffy+amp*sin(6.134*z+9.31*x+3*time+8)*exp(-8*r)
+     
+      x0 = 0.2*sin(2*time+8)
+      z0 = 1.0+7.5
+      r=(x-x0)**2+(y-y0)**2+(z-z0)**2
+      ffy = ffy+amp*sin(-7.12*z+10.1*x+3*time+15)*exp(-8*r)
+     
+      x0 = 0.2*sin(2*time+15)
+      z0 = 1.0+10
+      r=(x-x0)**2+(y-y0)**2+(z-z0)**2
+      ffy = ffy+amp*sin(4.98*z+9.87*x+3*time)*exp(-8*r)
+     
+      return
+      end subroutine userf
+c-------------------------------------------------------------------------
+      subroutine userq(ix,iy,iz,eg) 
+      return
+      end subroutine userq
+c-------------------------------------------------------------------------
+      subroutine userq2(q) 
+     
+      return
+      end subroutine userq2
+c-------------------------------------------------------------------------
+      subroutine userbc(ix,iy,iz,iside,ieg) 
+      include 'SIZE'
+      include 'NEKUSE'
+     
+      ux = 0.0
+      uy = 0.0
+      uz = 0.0
+     
+      return
+      end subroutine userbc
+c-------------------------------------------------------------------------
+      subroutine useric(ix,iy,iz,eg) 
+      include 'SIZE'
+      include 'NEKUSE'
+      include 'TSTEP'
+     
+      integer ix, iy, iz, eg
+      real  AR_ic, coeff_ic, H_ic, w_ic, a_ic, L_ic, ys_ic, xs_ic
+      real  wso_ic, alpha1_ic, alpha2_ic, ws1_ic, ws2_ic, wstotal_ic
+     
+c     H_icis the height of the duct, W_ic is the width, AR is the ratio
+     
+c     Coefficient for Ub=1
+      coeff_ic=34.284065021962256
+     
+c     Geometry
+      H_ic = {extent_mesh[0]} - {root_mesh[0]}
+      W_ic = {extent_mesh[1]} - {root_mesh[1]}
+      AR_ic = w_ic / H_ic
+      w_ic=AR_ic*H_ic
+      a_ic=1./AR_ic
+      L_ic=w_ic/2.
+      ys_ic=y/L_ic
+      xs_ic=x/L_ic
+     
+c       Laminar duct profile from Panton
+c       Leading order term
+      wso_ic=1./2.*(a_ic**2.-ys_ic**2.)
+     
+c      ! Parameter alpha for first and second order terms
+      alpha1_ic=(2.*1.-1.)*pi/(2.*a_ic)
+      alpha2_ic=(2.*2.-1.)*pi/(2.*a_ic)
+     
+c      ! First and second order terms
+      ws1_ic=2./a_ic*(-1)/(alpha1_ic)**3.*cos(alpha1_ic*ys_ic) 
+     +     *(exp(alpha1_ic*(xs_ic-1.))+exp(-alpha1_ic*(xs_ic+1.))) 
+     +     /(1+exp(-2.*alpha1_ic))
+      ws2_ic=2./a_ic*(1)/(alpha2_ic)**3.*cos(alpha2_ic*ys_ic) 
+     +     *(exp(alpha2_ic*(xs_ic-1.))+exp(-alpha2_ic*(xs_ic+1.))) 
+     +     /(1+exp(-2.*alpha2_ic))
+     
+c      ! Sum of leading, first and second order terms
+      wstotal_ic=wso_ic+ws1_ic+ws2_ic
+     
+c      ! Initial conditions: laminar profile
+      ux=0.
+      uy=0.
+      uz=coeff_ic*wstotal_ic * {velocity}
+c      ! uz=3.0/2.0*(1.0-y**2)
+      
+      temp = erf((x-{root_mesh[0]})/({extent_mesh[0]}-{root_mesh[0]})/2.) 
+     
+      return
+      end subroutine useric
+c-----------------------------------------------------------------------
+      subroutine userchk()
+      include 'SIZE'
+      include 'INPUT'
+      include 'TSTEP'
+      include 'SOLN'
+     
+      real tmax, wmax
+     
+      if (param(69) < 1 .and. istep == 0) 
+     + call outpost(vx,vy,vz,pr,t,'   ')
+      ifxyo = .false.
+      if (mod(istep, 32) == 0) call runstat()
+     
+      tmax = glamax(t, lx1*ly1*lz1*lelt)
+      if (nid == 0) write(*,*) "Maximum point-wise scalar", tmax
+      wmax = glamax(vz, lx1*ly1*lz1*lelt)
+      if (nid == 0) write(*,*) "Maximum vertical velocity", wmax
+     
+     
+      return
+      end subroutine userchk
+c-------------------------------------------------------------------------
+      subroutine usrdat()   ! This routine to modify element vertices
+#if 0
+      use kinds, only : DP
+      use parallel, only : nid
+      use size_m, only : nelt
+      use input, only : xc, yc, zc
+      use mesh, only : shape_x
+      use mesh, only : ticks_x, ticks_y, ticks_z
+      use parallel, only : lglel
+      use tstep, only : pi
+      implicit none
+
+      integer :: iel, ieg
+      integer :: i
+      integer :: ix(3)
+
+
+      if ({alpha[0]} >= 0) then
+        do i = 1, shape_x(1)-1
+          ticks_x(i) = .5*sin(ticks_x(i)*(pi - 2.*{alpha[0]})) / sin(pi/2. - {alpha[0]})
+        enddo
+      endif
+      if (nid == 0) write(*,*) ticks_x
+
+      if ({alpha[1]} >= 0) then
+        do i = 1, shape_x(2)-1
+          ticks_y(i) = .5*sin(ticks_y(i)*(pi - 2.*{alpha[1]})) / sin(pi/2. - {alpha[1]})
+        enddo
+      endif
+      if (nid == 0) write(*,*) ticks_y
+
+      do iel = 1, nelt
+        ieg = lglel(iel)
+
+        ix(1) = mod(ieg - 1, shape_x(1))
+        ix(2) = mod((ieg-1)/shape_x(1), shape_x(2))
+        ix(3) = mod((ieg-1)/(shape_x(1)*shape_x(2)), shape_x(3))
+
+        XC(1,iel) = ticks_x(ix(1))
+        XC(2,iel) = ticks_x(ix(1)+1)
+        XC(3,iel) = ticks_x(ix(1)+1)
+        XC(4,iel) = ticks_x(ix(1))
+        XC(5,iel) = ticks_x(ix(1))
+        XC(6,iel) = ticks_x(ix(1)+1)
+        XC(7,iel) = ticks_x(ix(1)+1)
+        XC(8,iel) = ticks_x(ix(1))
+
+        YC(1,iel) = ticks_y(ix(2))
+        YC(2,iel) = ticks_y(ix(2))
+        YC(3,iel) = ticks_y(ix(2)+1)
+        YC(4,iel) = ticks_y(ix(2)+1)
+        YC(5,iel) = ticks_y(ix(2))
+        YC(6,iel) = ticks_y(ix(2))
+        YC(7,iel) = ticks_y(ix(2)+1)
+        YC(8,iel) = ticks_y(ix(2)+1)
+
+        ZC(1,iel) = ticks_z(ix(3))
+        ZC(2,iel) = ticks_z(ix(3))
+        ZC(3,iel) = ticks_z(ix(3))
+        ZC(4,iel) = ticks_z(ix(3))
+        ZC(5,iel) = ticks_z(ix(3)+1)
+        ZC(6,iel) = ticks_z(ix(3)+1)
+        ZC(7,iel) = ticks_z(ix(3)+1)
+        ZC(8,iel) = ticks_z(ix(3)+1)
+      enddo
+#endif
+      return
+      end subroutine usrdat
+c-------------------------------------------------------------------------
+      subroutine usrdat2()  ! This routine to modify mesh coordinates
+     
+      return
+      end subroutine usrdat2
+c-------------------------------------------------------------------------
+      subroutine usrdat3()
+     
+      return
+      end subroutine usrdat3
+c-------------------------------------------------------------------------
