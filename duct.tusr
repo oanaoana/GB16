@@ -142,17 +142,19 @@
     use soln, only : vx, vy, vz, pr, t
     implicit none
 
-    real(DP), external :: glmax, glmin
-    real(DP) :: tmax, wmax
+    real(DP), external :: glamax
+    real(DP) :: tmax, umax, vmax, wmax
 
     if (param(69) < 1 .and. istep == 0) call outpost(vx,vy,vz,pr,t,'   ')
     ifxyo = .false.
     if (mod(istep, 32) == 0) call runstat()
 
-    tmax = max(glmax(t, lx1*ly1*lz1*lelt), -glmin(t, lx1*ly1*lz1*lelt))
-    if (nid == 0) write(*,*) "Maximum point-wise scalar", tmax
-    wmax = max(glmax(vz, lx1*ly1*lz1*lelt), -glmin(vz, lx1*ly1*lz1*lelt))
-    if (nid == 0) write(*,*) "Maximum vertical velocity", wmax
+    tmax = glamax(t, lx1*ly1*lz1*lelt)
+    if (nid == 0) write(*,*) "Maximum scalar", tmax
+    umax = glamax(vx, lx1*ly1*lz1*lelt)
+    vmax = glamax(vy, lx1*ly1*lz1*lelt)
+    wmax = glamax(vz, lx1*ly1*lz1*lelt)
+    if (nid == 0) write(*,*) "Maximum velocity", umax, vmax, wmax
 
 
     return

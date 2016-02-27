@@ -134,7 +134,7 @@ c-----------------------------------------------------------------------
       include 'TSTEP'
       include 'SOLN'
      
-      real tmax, wmax
+      real tmax, umax, vmax, wmax
      
       if (param(69) < 1 .and. istep == 0) 
      + call outpost(vx,vy,vz,pr,t,'   ')
@@ -142,9 +142,12 @@ c-----------------------------------------------------------------------
       if (mod(istep, 32) == 0) call runstat()
      
       tmax = glamax(t, lx1*ly1*lz1*lelt)
-      if (nid == 0) write(*,*) "Maximum point-wise scalar", tmax
+      if (nid == 0) write(*,*) "Maximum scalar", tmax
+      umax = glamax(vx, lx1*ly1*lz1*lelt)
+      vmax = glamax(vy, lx1*ly1*lz1*lelt)
       wmax = glamax(vz, lx1*ly1*lz1*lelt)
-      if (nid == 0) write(*,*) "Maximum vertical velocity", wmax
+      if (nid == 0) write(*,'(A,3F16.11)') 
+     + "Maximum velocity", umax, vmax, wmax
      
      
       return
