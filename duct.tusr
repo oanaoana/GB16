@@ -94,8 +94,8 @@
     coeff_ic=34.284065021962256
 
 !   Geometry
-    H_ic = {extent_mesh[0]} - {root_mesh[0]}
-    W_ic = {extent_mesh[1]} - {root_mesh[1]}
+    H_ic = {extent_mesh[0]} - ({root_mesh[0]})
+    W_ic = {extent_mesh[1]} - ({root_mesh[1]})
     AR_ic = w_ic / H_ic
     w_ic=AR_ic*H_ic
     a_ic=1./AR_ic
@@ -128,7 +128,7 @@
     uz=coeff_ic*wstotal_ic * {velocity}
     ! uz=3.0/2.0*(1.0-y**2)
     
-    temp = erf((x-{root_mesh[0]})/({extent_mesh[0]}-{root_mesh[0]})/2.) 
+    temp = erf((x-({root_mesh[0]}))/({extent_mesh[0]}-({root_mesh[0]}))/2.) 
 
     return
   end subroutine useric
@@ -170,7 +170,7 @@
       use parallel, only : lglel
       use tstep, only : pi
       implicit none
-
+#if 0
       integer :: iel, ieg
       integer :: i
       integer :: ix(3)
@@ -178,14 +178,14 @@
 
       if ({alpha[0]} >= 0) then
         do i = 1, shape_x(1)-1
-          ticks_x(i) = .5*sin(ticks_x(i)*(pi - 2.*{alpha[0]})) / sin(pi/2. - {alpha[0]})
+          ticks_x(i) = .5*sin(ticks_x(i)*(pi - 2.*({alpha[0]}))) / sin(pi/2. - ({alpha[0]}))
         enddo
       endif
       if (nid == 0) write(*,*) ticks_x
 
       if ({alpha[1]} >= 0) then
         do i = 1, shape_x(2)-1
-          ticks_y(i) = .5*sin(ticks_y(i)*(pi - 2.*{alpha[1]})) / sin(pi/2. - {alpha[1]})
+          ticks_y(i) = .5*sin(ticks_y(i)*(pi - 2.*({alpha[1]}))) / sin(pi/2. - ({alpha[1]}))
         enddo
       endif
       if (nid == 0) write(*,*) ticks_y
@@ -224,7 +224,7 @@
         ZC(7,iel) = ticks_z(ix(3)+1)
         ZC(8,iel) = ticks_z(ix(3)+1)
       enddo
-
+#endif
     return
     end subroutine usrdat
 !-----------------------------------------------------------------------
