@@ -22,11 +22,14 @@ echo "#SBATCH --time=${5}:00" >> tmp.job
 #echo "#SBATCH --job-name=${1}" >> tmp.job
 echo "#SBATCH --nodes=${3}" >> tmp.job
 echo "export MPICH_USE_DMAPP_COLL=1" >> tmp.job
-echo "srun --ntasks=$(( ${3} * ${4})) --hint=nomultithread --ntasks-per-node=${4} --ntasks-per-socket=$((${4} / 2)) --cpu_bind=rank nek5000" >> tmp.job
+echo "export MPICH_GNI_NUM_BUFS=48" >> tmp.job
+echo "export MPICH_GNI_MAX_VSHORT_MSG_SIZE=32" >> tmp.job
+echo "module load craype-hugepages8M" >> tmp.job
+echo "srun --ntasks=$(( ${3} * ${4})) --ntasks-per-node=${4} --ntasks-per-socket=$((${4} / 2)) --ntasks-per-core=1 --cpu_bind=rank nek5000" >> tmp.job
 echo "touch DONE" >> tmp.job
 rm -f DONE
 here=`pwd`
-jobid=`sbatch -A k1123 -D $here  -x nid05407 tmp.job 2>&1 | egrep -o -e "\b[0-9]+$"`
+jobid=`sbatch -A k1123 -D $here --reservation=hadrib_66 tmp.job 2>&1 | egrep -o -e "\b[0-9]+$"`
 
 echo $jobid
 echo $jobid > ${1}.error

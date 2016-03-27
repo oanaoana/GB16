@@ -170,7 +170,6 @@
       use parallel, only : lglel
       use tstep, only : pi
       implicit none
-#if 0
       integer :: iel, ieg
       integer :: i
       integer :: ix(3)
@@ -224,7 +223,6 @@
         ZC(7,iel) = ticks_z(ix(3)+1)
         ZC(8,iel) = ticks_z(ix(3)+1)
       enddo
-#endif
     return
     end subroutine usrdat
 !-----------------------------------------------------------------------
