@@ -46,19 +46,20 @@ PROGRAM nekbox_libxsmm_bench
   DOUBLE PRECISION :: minar, maxar, avgar
   INTEGER(8) :: i, r, reps, start
   INTEGER :: m, n, k, s, mpierror, rank, procs, arreps, arwarm
+  INTEGER :: s_low, s_high, s_step, s_loop
 
   CALL MPI_Init( mpierror )
   CALL MPI_Comm_size ( MPI_COMM_WORLD, procs, mpierror )
   CALL MPI_Comm_rank ( MPI_COMM_WORLD, rank,  mpierror )
 
-!  s = 1
   m = 32
-!  n = 33
   n = 32
-!  k = 64
   k = 32
-!  reps = 6000/s
-!  reps = 60/s
+
+  s_low = 0
+  s_high = 768
+  s_step = 8
+
   arreps = 10000
   arwarm = 100
 
@@ -66,85 +67,85 @@ PROGRAM nekbox_libxsmm_bench
   CALL libxsmm_dispatch(xmm, m, n, k)
 
   
-  s = 256
   ALLOCATE(bufa(1024))
   ALLOCATE(bufb(1024))
   bufa(:) = 1.0
   bufb(:) = 1.0
 
 
-  do s = 272, 544, 8
-  reps = 6000000/s
-  ALLOCATE(a(m,k,s))
-  ALLOCATE(b(k,n))
-  ALLOCATE(c(m,n))
-  
-  scale = (1D0 / s)
-  DO r = 1, s
-    CALL init(42, a(:,:,r), scale, r - 1)
+  do s_loop = s_low, s_high, s_step
+    s = max(1, s_loop)
+     
+    reps = 6000000/s
+    ALLOCATE(a(m,k,s))
+    ALLOCATE(b(k,n))
+    ALLOCATE(c(m,n))
     
-  END DO
-  CALL init(24, b(:,:), scale, 257)
-  CALL init(55, c(:,:), scale, 258)
-
-  ! Measure GEMM
-
-  CALL MPI_Barrier( MPI_COMM_WORLD, mpierror )
-  start = libxsmm_timer_tick()
-  DO i = 1, reps
+    scale = (1D0 / s)
     DO r = 1, s
-      CALL libxsmm_call(xmm, a(:,:,r), b(:,:), c(:,:))
+      CALL init(42, a(:,:,r), scale, r - 1)  
     END DO
-  END DO
-  duration = libxsmm_timer_duration(start, libxsmm_timer_tick())
-  CALL MPI_Barrier( MPI_COMM_WORLD, mpierror )
-
-  IF (0.LT.duration) THEN
-    gflops = (2D0 * reps * m * n * k * s * 1D-9 / duration)
-    gbytes = (8D0 * reps * m * k * s * 1D-9 / duration)
-
-    CALL MPI_Reduce(gflops, mingflops, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD, mpierror)
-    CALL MPI_Reduce(gflops, maxgflops, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD, mpierror)
-    CALL MPI_Reduce(gflops, avggflops, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD, mpierror)
-
-    CALL MPI_Reduce(gbytes, mingbytes, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD, mpierror)
-    CALL MPI_Reduce(gbytes, maxgbytes, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD, mpierror)
-    CALL MPI_Reduce(gbytes, avggbytes, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD, mpierror)
-
-    avggflops = avggflops/procs
-    avggbytes = avggbytes/procs
-
-    CALL MPI_Allreduce( gflops, sysgflops, 1, MPI_DOUBLE, &
-      MPI_SUM, MPI_COMM_WORLD, mpierror ) 
-
-    IF (0.eq.rank) THEN
-      write(*,*) "m,n,k,s=", m, n, k, s
-      IF (s.gt.200) THEN
-        WRITE(*, "(A,F4.1,A,A,F4.1,A)") &
-          "xsmm min performance: ", mingflops, " GFLOPS", &
-          "xsmm min bandwidth  : ", mingbytes, " GB/s"
-        WRITE(*, "(A,F4.1,A,A,F4.1,A)") &
-          "xsmm max performance: ", maxgflops, " GFLOPS", &
-          "xsmm max bandwidth  : ", maxgbytes, " GB/s"
-        WRITE(*, "(A,F4.1,A,A,F4.1,A)") &
-          "xsmm avg performance: ", avggflops, " GFLOPS", &
-          "xsmm avg bandwidth  : ", avggbytes, " GB/s"
-      ELSE
-        WRITE(*, "(A,F4.1,A)") &
-          "xsmm min performance: ", mingflops, " GFLOPS"
-        WRITE(*, "(A,F4.1,A)") &
-          "xsmm max performance: ", maxgflops, " GFLOPS"
-        WRITE(*, "(A,F4.1,A)") &
-          "xsmm avg performance: ", avggflops, " GFLOPS"
-      END IF
-      WRITE(*, "(A,F12.1,A)") &
-         "system xsmm performance: ", sysgflops, " GFLOPS"
-    ENDIF
-  ENDIF 
-
-  DEALLOCATE(a)
-  DEALLOCATE(b)
-  DEALLOCATE(c)
+    CALL init(24, b(:,:), scale, 257)
+    CALL init(55, c(:,:), scale, 258)
+ 
+    ! Measure GEMM
+ 
+    CALL MPI_Barrier( MPI_COMM_WORLD, mpierror )
+    start = libxsmm_timer_tick()
+    DO i = 1, reps
+      DO r = 1, s
+        CALL libxsmm_call(xmm, a(:,:,r), b(:,:), c(:,:))
+      END DO
+    END DO
+    duration = libxsmm_timer_duration(start, libxsmm_timer_tick())
+    CALL MPI_Barrier( MPI_COMM_WORLD, mpierror )
+ 
+    IF (0.LT.duration) THEN
+      gflops = (2D0 * reps * m * n * k * s * 1D-9 / duration)
+      gbytes = (8D0 * reps * m * k * s * 1D-9 / duration)
+ 
+      CALL MPI_Reduce(gflops, mingflops, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD, mpierror)
+      CALL MPI_Reduce(gflops, maxgflops, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD, mpierror)
+      CALL MPI_Reduce(gflops, avggflops, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD, mpierror)
+ 
+      CALL MPI_Reduce(gbytes, mingbytes, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD, mpierror)
+      CALL MPI_Reduce(gbytes, maxgbytes, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD, mpierror)
+      CALL MPI_Reduce(gbytes, avggbytes, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD, mpierror)
+ 
+      avggflops = avggflops/procs
+      avggbytes = avggbytes/procs
+ 
+      CALL MPI_Allreduce( gflops, sysgflops, 1, MPI_DOUBLE, &
+        MPI_SUM, MPI_COMM_WORLD, mpierror ) 
+ 
+      IF (0.eq.rank) THEN
+        write(*,"(A,I5,A,I5,A,I5,A,I5)") "m=", m, "    n=", n, "    k=", k, "    s=", s
+        IF (s.gt.200) THEN
+          WRITE(*, "(A,F4.1,A,A,F4.1,A)") &
+            "xsmm min performance: ", mingflops, " GFLOPS", &
+            "xsmm min bandwidth  : ", mingbytes, " GB/s"
+          WRITE(*, "(A,F4.1,A,A,F4.1,A)") &
+            "xsmm max performance: ", maxgflops, " GFLOPS", &
+            "xsmm max bandwidth  : ", maxgbytes, " GB/s"
+          WRITE(*, "(A,F4.1,A,A,F4.1,A)") &
+            "xsmm avg performance: ", avggflops, " GFLOPS", &
+            "xsmm avg bandwidth  : ", avggbytes, " GB/s"
+        ELSE
+          WRITE(*, "(A,F4.1,A)") &
+            "xsmm min performance: ", mingflops, " GFLOPS"
+          WRITE(*, "(A,F4.1,A)") &
+            "xsmm max performance: ", maxgflops, " GFLOPS"
+          WRITE(*, "(A,F4.1,A)") &
+            "xsmm avg performance: ", avggflops, " GFLOPS"
+        END IF
+        WRITE(*, "(A,F12.1,A,I5)") &
+           "system xsmm performance: ", sysgflops, " GFLOPS for s=", s
+      ENDIF
+    ENDIF 
+ 
+    DEALLOCATE(a)
+    DEALLOCATE(b)
+    DEALLOCATE(c)
 
   enddo
 
