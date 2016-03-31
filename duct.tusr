@@ -1,3 +1,145 @@
+module usr
+  use kinds, only : DP
+  implicit none
+
+  real(DP), allocatable :: base_flow(:,:,:,:)
+  real(DP) :: base_rate = 0._dp
+  real(DP) :: base_force = 0._dp
+
+  real(DP) :: force_z = 0._dp
+  real(DP) :: gamma
+  real(DP) :: flow_rate = {flow_rate}
+  real(DP) :: diameter = ({extent_mesh[0]}) - ({root_mesh[0]})
+  real(DP) :: viscosity = {viscosity}
+
+
+  contains
+
+  real(DP) FUNCTION COLEBROOK(R,K)
+  ! F = COLEBROOK(R,K) computes t h e Darcy−Weisbach f r i c t i o n
+  ! f a c t o r a c c o r d i n g t o t h e Co l e b r o o k−White f o r m u l a .
+  ! R : Reynold ’ s number .
+  ! K : Roughness h e i g h t 
+  ! From Efficient Resolution of the Colebrook Equation, Didier Clamond, DOI: 10.1021/ie801626g
+
+    IMPLICIT NONE
+    real(DP) :: R, K, F , E , X1 , X2
+    real(DP) :: T = 1._dp / 3._dp
+    X1 = K * R * 0.123968186335417556_dp
+    X2 = LOG(R) - 0.779397488455682028_dp
+
+    F = X2 - 0.2_dp
+    E = (LOG( X1+F) - 0.2_dp) / ( 1.0_dp+X1+F)
+    F = F - ( 1.0_dp+X1+F+0.5_dp*E)*E*( X1+F ) / ( 1.0_dp+X1+F+E*( 1.0_dp+E*T) )
+    IF ( ( X1+X2 ) < ( 5.7_dp ) ) THEN
+      E = (LOG( X1+F)+F-X2 ) / ( 1.0_dp+X1+F)
+      F = F - ( 1.0_dp+X1+F+0.5_dp*E)*E*( X1+F) / ( 1.0_dp+X1+F+E * ( 1.0_dp+E*T) )
+    ENDIF
+    F = 1.151292546497022842_dp / F
+    COLEBROOK = F*F
+    return
+  end function colebrook
+
+
+  real(DP) function darcy_factor()
+    real(DP), parameter :: darcy = 56.908
+    real(DP) :: Re
+    Re = flow_rate * diameter / viscosity
+
+!    if (Re < 2000) then
+      darcy_factor = darcy / Re
+      return
+!    endif
+
+    darcy_factor = colebrook(Re,0._dp)
+    
+    return 
+  end function darcy_factor
+
+
+  subroutine get_base_flow()
+    use kinds, only : DP
+    use parallel, only : nid
+    use size_m, only : nx1, ny1, nz1, nelv
+    use soln, only : vx, vy, vz, t
+    use soln, only : v3mask, vmult
+    use soln, only : tmask, tmult
+    use soln, only : vdiff, vtrans
+    use geom, only : binvm1, bm1
+    use geom, only : xm1, ym1
+    use helmholtz, only : hsolve, approx_space
+    use ds, only : dssum
+    use tstep, only : pi
+    implicit none
+
+    real(DP), allocatable :: rhs(:,:,:,:), est(:,:,:,:), prev(:,:,:,:), delta(:,:,:,:)
+    real(DP), allocatable :: h1(:,:,:,:), h2(:,:,:,:)
+    real(DP), external :: glsum, glmax, glmin
+    type(approx_space) :: apx
+    real(DP) :: prefac, kx, ky
+    integer :: i, j
+
+    if (.not. allocated(base_flow)) then
+      allocate(base_flow(nx1,ny1,nz1,nelv))
+    endif
+
+    allocate(rhs(nx1,ny1,nz1,nelv), h1(nx1,ny1,nz1,nelv), h2(nx1,ny1,nz1,nelv))
+    allocate(est(nx1,ny1,nz1,nelv), prev(nx1,ny1,nz1,nelv), delta(nx1, ny1, nz1, nelv))
+
+    h1 = vdiff(:,:,:,:,1)
+    h2 = 0._dp
+
+    rhs = force_z * bm1 * vtrans(:,:,:,:,1) 
+    prefac = 16 * force_z / viscosity
+    est = 0._dp
+#if 0
+    do i = 0, 16
+      kx = (2*i+1) * pi
+      do j = 0, 16
+        ky = (2*j+1) * pi
+        est = est + (-1)**(i+j) * cos(kx * xm1) * cos(ky * ym1)/ kx / ky / (kx**2. + ky**2.) 
+      enddo
+    enddo
+#endif
+    est = est * prefac
+
+    CALL AXHELM (prev,est,H1,H2,1,1)
+    call dssum(prev(:,1,1,1))
+    prev = prev * vmult
+    prev = prev * v3mask
+
+    rhs = rhs - prev
+    call hsolve('BASE',delta,rhs,h1,h2,v3mask,vmult,1,{tolhelm},256,3 &
+        ,apx,binvm1)
+!    base_flow = vz + delta
+
+    base_flow = est + delta
+    base_rate = glsum(base_flow * bm1, nx1*ny1*nz1*nelv) / ({extent_mesh[2]})
+    base_force = force_z
+
+  end subroutine get_base_flow
+
+#if 0
+    h1 = vdiff(:,:,:,:,2)
+    rhs = {T_hat} * vz * bm1
+    CALL AXHELM (prev,t,H1,H2,1,1)
+    call dssum(prev(:,1,1,1))
+    prev = prev * tmult(:,:,:,:,1)
+    prev = prev * tmask(:,:,:,:,1)
+
+    rhs = rhs - prev
+    call hsolve('ICT ',delta,rhs,h1,h2, &
+                tmask(:,:,:,:,1),tmult(:,:,:,:,1),1,{tolhelm},128,1 &
+        ,apx,binvm1)
+    t(:,:,:,:,1) = t(:,:,:,:,1) + delta
+
+    return
+
+  end subroutine get_base_flow()
+#endif
+
+end module usr
+
 !-----------------------------------------------------------------------
     subroutine uservp(ix,iy,iz,eg) ! set variable properties
 
@@ -8,6 +150,7 @@
     use nekuse, only : x, y, z, ffx, ffy, ffz, temp
     use kinds, only : DP
     use tstep, only : time
+    use usr, only : force_z
     implicit none
 
 !     Note: this is an acceleration term, NOT a force!
@@ -21,7 +164,7 @@
 
     ! only trip in y direction
     ffx = 0.0
-    ffz = 0.0
+    ffz = force_z
 
     ! only trip at early times
     if (time >= tt) then
@@ -59,6 +202,13 @@
     end subroutine userf
 !-----------------------------------------------------------------------
     subroutine userq(ix,iy,iz,eg) ! set source term
+    use size_m
+    use nekuse
+    use usr, only : gamma
+    implicit none
+
+    integer :: ix, iy, iz, eg
+    qvol   = gamma * uz
 
     return
     end subroutine userq
@@ -79,59 +229,40 @@
     end subroutine userbc
 !-----------------------------------------------------------------------
     subroutine useric(ix,iy,iz,eg) ! set up initial conditions
-!      use ifport, only : random_number, random_seed
     use kinds, only : DP
+    use usr, only : flow_rate, diameter, viscosity, darcy_factor
+    use usr, only : force_z, gamma
     use nekuse, only : x, y, z, ux, uy, uz, temp
     use tstep, only : pi
     implicit none
     integer :: ix, iy, iz, eg
-    real(DP) :: AR_ic, coeff_ic, H_ic, w_ic, a_ic, L_ic, ys_ic, xs_ic
-    real(DP) :: wso_ic, alpha1_ic, alpha2_ic, ws1_ic, ws2_ic, wstotal_ic
-
-!   H_icis the height of the duct, W_ic is the width, AR is the ratio
-
-!   Coefficient for Ub=1
-    coeff_ic=34.284065021962256
-
-!   Geometry
-    H_ic = {extent_mesh[0]} - ({root_mesh[0]})
-    W_ic = {extent_mesh[1]} - ({root_mesh[1]})
-    AR_ic = w_ic / H_ic
-    w_ic=AR_ic*H_ic
-    a_ic=1./AR_ic
-    L_ic=w_ic/2.
-    ys_ic=y/L_ic
-    xs_ic=x/L_ic
-
-    ! Laminar duct profile from Panton
-    ! Leading order term
-    wso_ic=1./2.*(a_ic**2.-ys_ic**2.)
-
-    ! Parameter alpha for first and second order terms
-    alpha1_ic=(2.*1.-1.)*pi/(2.*a_ic)
-    alpha2_ic=(2.*2.-1.)*pi/(2.*a_ic)
-
-    ! First and second order terms
-    ws1_ic=2./a_ic*(-1)/(alpha1_ic)**3.*cos(alpha1_ic*ys_ic) &
-           *(exp(alpha1_ic*(xs_ic-1.))+exp(-alpha1_ic*(xs_ic+1.))) &
-           /(1+exp(-2.*alpha1_ic))
-    ws2_ic=2./a_ic*(1)/(alpha2_ic)**3.*cos(alpha2_ic*ys_ic) &
-           *(exp(alpha2_ic*(xs_ic-1.))+exp(-alpha2_ic*(xs_ic+1.))) &
-           /(1+exp(-2.*alpha2_ic))
-
-    ! Sum of leading, first and second order terms
-    wstotal_ic=wso_ic+ws1_ic+ws2_ic
+    integer :: i, j
+    real(DP) :: prefac
+    real(DP) :: kx, ky
 
     ! Initial conditions: laminar profile
+    force_z = flow_rate**2. * darcy_factor() / (2. * diameter**2.) 
+    gamma = force_z
+    prefac = 16 * force_z / viscosity
+    uz = 0._dp
+    temp = 0._dp
+    do i = 0, 4
+      kx = (2*i+1) * pi
+      do j = 0, 4
+        ky = (2*j+1) * pi
+        uz = uz + (-1)**(i+j) * cos(kx * x) * cos(ky * y)/ kx / ky / (kx**2. + ky**2.) 
+        temp = temp + (-1)**(i+j) * cos(kx * x) * cos(ky * y) / (kx**2. + ky**2.)**2. / kx / ky
+      enddo
+    enddo
+    uz = uz * prefac
+    temp = temp * prefac * gamma / {conductivity}
+
+    ! nothing in the stream-wise direction
     ux=0.
     uy=0.
-    uz=coeff_ic*wstotal_ic * {velocity}
-    ! uz=3.0/2.0*(1.0-y**2)
-    
-    temp = erf((x-({root_mesh[0]}))/({extent_mesh[0]}-({root_mesh[0]}))/2.) 
 
     return
-  end subroutine useric
+    end subroutine useric
 !-----------------------------------------------------------------------
     subroutine userchk()
     use kinds, only : DP
@@ -140,13 +271,19 @@
     use input, only : param, ifxyo
     use parallel, only : nid
     use soln, only : vx, vy, vz, pr, t
+    use geom, only : bm1
+    use usr, only : force_z, diameter, viscosity, flow_rate
+    use usr, only : get_base_flow
+    use usr, only : base_flow, base_rate, base_force
     implicit none
 
-    real(DP), external :: glamax
-    real(DP) :: tmax, umax, vmax, wmax
+    real(DP), external :: glamax, glsum
+    real(DP) :: tmax, umax, vmax, wmax, ttol, wtol
+    real(DP) :: real_rate, delta_rate, relaxation_factor
 
     if (param(69) < 1 .and. istep == 0) call outpost(vx,vy,vz,pr,t,'   ')
     ifxyo = .false.
+    if (istep == 1) call get_base_flow()
     if (mod(istep, 32) == 0) call runstat()
 
     tmax = glamax(t, lx1*ly1*lz1*lelt)
@@ -155,7 +292,21 @@
     vmax = glamax(vy, lx1*ly1*lz1*lelt)
     wmax = glamax(vz, lx1*ly1*lz1*lelt)
     if (nid == 0) write(*,*) "Maximum velocity", umax, vmax, wmax
+    ttol = glsum(t(:,:,:,:,1) * bm1, lx1*ly1*lz1*lelt)
+    wtol = glsum(vz * bm1, lx1*ly1*lz1*lelt)
+    real_rate = wtol / {extent_mesh[2]}
+    if (nid == 0) write(*,*) "Flow rate:", &
+                              real_rate ,   &
+                              real_rate * diameter / viscosity, &
+                              sqrt(force_z) * diameter**(3./2.) / (4. * viscosity)
+    if (nid == 0) write(*,*) "Total temp:", ttol
 
+    if (istep >= 1) then
+      delta_rate = (flow_rate - real_rate) / base_rate
+      vz = vz + delta_rate * base_flow
+      force_z = force_z + delta_rate * base_force
+      if (nid == 0) write(*,*) "Adjusting flow by ", delta_rate
+    endif
 
     return
     end subroutine userchk
@@ -170,6 +321,7 @@
       use parallel, only : lglel
       use tstep, only : pi
       implicit none
+
       integer :: iel, ieg
       integer :: i
       integer :: ix(3)
@@ -177,14 +329,14 @@
 
       if ({alpha[0]} >= 0) then
         do i = 1, shape_x(1)-1
-          ticks_x(i) = .5*sin(ticks_x(i)*(pi - 2.*({alpha[0]}))) / sin(pi/2. - ({alpha[0]}))
+          ticks_x(i) = .5*sin(ticks_x(i)*(pi - 2.*{alpha[0]})) / sin(pi/2. - {alpha[0]})
         enddo
       endif
       if (nid == 0) write(*,*) ticks_x
 
       if ({alpha[1]} >= 0) then
         do i = 1, shape_x(2)-1
-          ticks_y(i) = .5*sin(ticks_y(i)*(pi - 2.*({alpha[1]}))) / sin(pi/2. - ({alpha[1]}))
+          ticks_y(i) = .5*sin(ticks_y(i)*(pi - 2.*{alpha[1]})) / sin(pi/2. - {alpha[1]})
         enddo
       endif
       if (nid == 0) write(*,*) ticks_y
@@ -223,6 +375,7 @@
         ZC(7,iel) = ticks_z(ix(3)+1)
         ZC(8,iel) = ticks_z(ix(3)+1)
       enddo
+
     return
     end subroutine usrdat
 !-----------------------------------------------------------------------
@@ -238,3 +391,5 @@
     return
     end subroutine usrdat3
 !-----------------------------------------------------------------------
+
+
