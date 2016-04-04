@@ -44,6 +44,7 @@ PROGRAM nekbox_libxsmm_bench
   DOUBLE PRECISION :: mingflops, maxgflops, avggflops
   DOUBLE PRECISION :: mingbytes, maxgbytes, avggbytes
   DOUBLE PRECISION :: minar, maxar, avgar
+  DOUBLE PRECISION :: accept_gflops, accept_gbytes
   INTEGER(8) :: i, r, reps, start
   INTEGER :: m, n, k, s, mpierror, rank, procs, arreps, arwarm
   INTEGER :: s_low, s_high, s_step, s_loop
@@ -58,7 +59,10 @@ PROGRAM nekbox_libxsmm_bench
 
   s_low = 0
   s_high = 768
-  s_step = 8
+  s_step = 64
+
+  accept_gflops = 32.0
+  accept_gbytes = 2.7
 
   arreps = 10000
   arwarm = 100
@@ -76,7 +80,11 @@ PROGRAM nekbox_libxsmm_bench
   do s_loop = s_low, s_high, s_step
     s = max(1, s_loop)
      
-    reps = 6000000/s
+    if (s == 1) then
+      reps = 200000000
+    else
+      reps = 2000000/s
+    endif
     ALLOCATE(a(m,k,s))
     ALLOCATE(b(k,n))
     ALLOCATE(c(m,n))
@@ -141,6 +149,13 @@ PROGRAM nekbox_libxsmm_bench
         WRITE(*, "(A,F12.1,A,I5)") &
            "system xsmm performance: ", sysgflops, " GFLOPS for s=", s
       ENDIF
+      if (mod(rank,32) .eq. 0 .and. gbytes <  accept_gbytes) then
+        write(*,"(A,I7,A,F4.1)") "WARNING: Low bandwidth on node ", rank/32, ".  Only: ", gbytes
+      endif
+      if (s .eq. 1 .and. mod(rank,32) .eq. 0 .and. gflops <  accept_gflops) then
+        write(*,"(A,I7,A,F4.1)") "WARNING: Low flop rate on node ", rank/32, ".  Only: ", gflops
+      endif
+
     ENDIF 
  
     DEALLOCATE(a)
