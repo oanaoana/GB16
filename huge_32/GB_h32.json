@@ -30,7 +30,7 @@
     1.0,
     1.0
   ],
-  "conductivity": 5.5e-6,
+  "conductivity": 1.0e-5,
   "dt": 1e-4,
   "left_bound": "W",
   "num_steps": 8.0,
@@ -64,6 +64,6 @@
   "procs": 256,
   "back_bound": "W",
   "io_step": 512.0,
-  "viscosity": 5.555555e-6,
+  "viscosity": 1.0e-5,
   "num_fields": 2
 }
