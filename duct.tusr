@@ -5,8 +5,9 @@ module usr
   real(DP), allocatable :: base_flow(:,:,:,:)
   real(DP) :: base_rate = 0._dp
   real(DP) :: base_force = 0._dp
-
   real(DP) :: force_z = 0._dp
+  real(DP) :: force_laminar = 0._dp
+
   real(DP) :: gamma
   real(DP) :: flow_rate = {flow_rate}
   real(DP) :: diameter = ({extent_mesh[0]}) - ({root_mesh[0]})
@@ -41,15 +42,17 @@ module usr
   end function colebrook
 
 
-  real(DP) function darcy_factor()
+  real(DP) function darcy_factor(use_colebrook)
     real(DP), parameter :: darcy = 56.908
     real(DP) :: Re
+    logical :: use_colebrook
+
     Re = flow_rate * diameter / viscosity
 
-!    if (Re < 2000) then
+    if (Re < 2000 .or. .not. use_colebrook) then
       darcy_factor = darcy / Re
       return
-!    endif
+    endif
 
     darcy_factor = colebrook(Re,0._dp)
     
@@ -67,76 +70,36 @@ module usr
     use soln, only : vdiff, vtrans
     use geom, only : binvm1, bm1
     use geom, only : xm1, ym1
-    use helmholtz, only : hsolve, approx_space
+    use solver, only : hsolve, approx_space
     use ds, only : dssum
     use tstep, only : pi
     implicit none
 
-    real(DP), allocatable :: rhs(:,:,:,:), est(:,:,:,:), prev(:,:,:,:), delta(:,:,:,:)
+    real(DP), allocatable :: rhs(:,:,:,:)
     real(DP), allocatable :: h1(:,:,:,:), h2(:,:,:,:)
-    real(DP), external :: glsum, glmax, glmin
+    real(DP), external :: glsum
     type(approx_space) :: apx
-    real(DP) :: prefac, kx, ky
-    integer :: i, j
 
     if (.not. allocated(base_flow)) then
       allocate(base_flow(nx1,ny1,nz1,nelv))
     endif
 
-    allocate(rhs(nx1,ny1,nz1,nelv), h1(nx1,ny1,nz1,nelv), h2(nx1,ny1,nz1,nelv))
-    allocate(est(nx1,ny1,nz1,nelv), prev(nx1,ny1,nz1,nelv), delta(nx1, ny1, nz1, nelv))
+    allocate(rhs(nx1,ny1,nz1,nelv))
+    allocate(h1(nx1,ny1,nz1,nelv))
+    allocate(h2(nx1,ny1,nz1,nelv))
 
-    h1 = vdiff(:,:,:,:,1)
-    h2 = 0._dp
-
-    rhs = force_z * bm1 * vtrans(:,:,:,:,1) 
-    prefac = 16 * force_z / viscosity
-    est = 0._dp
-#if 0
-    do i = 0, 16
-      kx = (2*i+1) * pi
-      do j = 0, 16
-        ky = (2*j+1) * pi
-        est = est + (-1)**(i+j) * cos(kx * xm1) * cos(ky * ym1)/ kx / ky / (kx**2. + ky**2.) 
-      enddo
-    enddo
-#endif
-    est = est * prefac
-
-    CALL AXHELM (prev,est,H1,H2,1,1)
-    call dssum(prev(:,1,1,1))
-    prev = prev * vmult
-    prev = prev * v3mask
-
-    rhs = rhs - prev
-    call hsolve('BASE',delta,rhs,h1,h2,v3mask,vmult,1,{tolhelm},256,3 &
+    call sethlm(h1, h2, -1)
+    
+    base_force = 1._dp
+    rhs = base_force * bm1 * vtrans(:,:,:,:,1)  * v3mask
+    call hsolve('BASE',base_flow,rhs,h1,h2,v3mask,vmult,1,{tolhelm},256,3 &
         ,apx,binvm1)
-!    base_flow = vz + delta
 
-    base_flow = est + delta
     base_rate = glsum(base_flow * bm1, nx1*ny1*nz1*nelv) / ({extent_mesh[2]})
-    base_force = force_z
+
+    deallocate(h1, h2, rhs)
 
   end subroutine get_base_flow
-
-#if 0
-    h1 = vdiff(:,:,:,:,2)
-    rhs = {T_hat} * vz * bm1
-    CALL AXHELM (prev,t,H1,H2,1,1)
-    call dssum(prev(:,1,1,1))
-    prev = prev * tmult(:,:,:,:,1)
-    prev = prev * tmask(:,:,:,:,1)
-
-    rhs = rhs - prev
-    call hsolve('ICT ',delta,rhs,h1,h2, &
-                tmask(:,:,:,:,1),tmult(:,:,:,:,1),1,{tolhelm},128,1 &
-        ,apx,binvm1)
-    t(:,:,:,:,1) = t(:,:,:,:,1) + delta
-
-    return
-
-  end subroutine get_base_flow()
-#endif
 
 end module usr
 
@@ -224,14 +187,16 @@ end module usr
     ux = 0.0
     uy = 0.0
     uz = 0.0
+    temp = 0.0
 
     return
     end subroutine userbc
 !-----------------------------------------------------------------------
     subroutine useric(ix,iy,iz,eg) ! set up initial conditions
     use kinds, only : DP
+    use parallel, only : nid
     use usr, only : flow_rate, diameter, viscosity, darcy_factor
-    use usr, only : force_z, gamma
+    use usr, only : force_z, gamma, force_laminar
     use nekuse, only : x, y, z, ux, uy, uz, temp
     use tstep, only : pi
     implicit none
@@ -241,14 +206,19 @@ end module usr
     real(DP) :: kx, ky
 
     ! Initial conditions: laminar profile
-    force_z = flow_rate**2. * darcy_factor() / (2. * diameter**2.) 
-    gamma = force_z
-    prefac = 16 * force_z / viscosity
+    if (force_laminar == 0._dp) then
+      force_laminar = flow_rate**2. * darcy_factor(.true.) / (2. * diameter**2.) 
+      if (nid == 0) write(*,*) "Expecting Re_tau = ", sqrt(abs(force_laminar)) * diameter**(3./2.) / (4. * viscosity)
+      force_laminar = flow_rate**2. * darcy_factor(.false.) / (2. * diameter**2.) 
+    endif
+    prefac = 16 * force_laminar / viscosity
+    force_z = force_laminar
+    gamma = force_laminar
     uz = 0._dp
     temp = 0._dp
-    do i = 0, 4
+    do i = 0, 6
       kx = (2*i+1) * pi
-      do j = 0, 4
+      do j = 0, 6
         ky = (2*j+1) * pi
         uz = uz + (-1)**(i+j) * cos(kx * x) * cos(ky * y)/ kx / ky / (kx**2. + ky**2.) 
         temp = temp + (-1)**(i+j) * cos(kx * x) * cos(ky * y) / (kx**2. + ky**2.)**2. / kx / ky
@@ -275,15 +245,21 @@ end module usr
     use usr, only : force_z, diameter, viscosity, flow_rate
     use usr, only : get_base_flow
     use usr, only : base_flow, base_rate, base_force
+    use tstep, only : dt, ab, bd
     implicit none
 
     real(DP), external :: glamax, glsum
     real(DP) :: tmax, umax, vmax, wmax, ttol, wtol
     real(DP) :: real_rate, delta_rate, relaxation_factor
+    real(DP) :: total_force
+    real(DP), save :: dt_old = 0._dp, bd_old = 0._dp
 
     if (param(69) < 1 .and. istep == 0) call outpost(vx,vy,vz,pr,t,'   ')
     ifxyo = .false.
-    if (istep == 1) call get_base_flow()
+    if (istep >= 1 .and. (abs(bd(1)-bd_old) + abs(dt - dt_old) > 1.e-9)) then
+       call get_base_flow()
+       dt_old = dt; bd_old = bd(1)
+    endif
     if (mod(istep, 32) == 0) call runstat()
 
     tmax = glamax(t, lx1*ly1*lz1*lelt)
@@ -295,18 +271,19 @@ end module usr
     ttol = glsum(t(:,:,:,:,1) * bm1, lx1*ly1*lz1*lelt)
     wtol = glsum(vz * bm1, lx1*ly1*lz1*lelt)
     real_rate = wtol / {extent_mesh[2]}
-    if (nid == 0) write(*,*) "Flow rate:", &
-                              real_rate ,   &
-                              real_rate * diameter / viscosity, &
-                              sqrt(force_z) * diameter**(3./2.) / (4. * viscosity)
-    if (nid == 0) write(*,*) "Total temp:", ttol
 
     if (istep >= 1) then
       delta_rate = (flow_rate - real_rate) / base_rate
       vz = vz + delta_rate * base_flow
-      force_z = force_z + delta_rate * base_force
+      total_force =  force_z + delta_rate * base_force 
       if (nid == 0) write(*,*) "Adjusting flow by ", delta_rate
     endif
+
+    if (nid == 0) write(*,*) "Flow rate:", &
+                              real_rate ,   &
+                              real_rate * diameter / viscosity, &
+                              sqrt(abs(total_force)) * diameter**(3./2.) / (4. * viscosity)
+
 
     return
     end subroutine userchk
