@@ -152,13 +152,12 @@ PROGRAM nekbox_libxsmm_bench
              WRITE(*, "(A,F12.1,A,I5)") &
                 "system xsmm performance: ", sysgflops, " GFLOPS for s=", s
            ENDIF
-           if (mod(rank,32) .eq. 0 .and. gbytes <  accept_gbytes) then
-             write(*,"(A,A,A,F4.1)") "WARNING: Low bandwidth on node ", node_name, ".  Only: ", gbytes
+           if ( gbytes <  accept_gbytes) then
+             write(*,"(A,A,I3,A,F4.1)") "WARNING: Low bandwidth on node ", node_name(1:15), mod(rank, 32), ".  Only: ", gbytes
           endif
-           if (s .eq. 1 .and. mod(rank,32) .eq. 0 .and. gflops <  accept_gflops) then
-             write(*,"(A,A,A,F4.1)") "WARNING: Low flop rate on node ", node_name, ".  Only: ", gflops
+           if (s .eq. 1  .and. gflops <  accept_gflops) then
+             write(*,"(A,A,I3,A,F4.1)") "WARNING: Low flop rate on node ", node_name(1:15), mod(rank,32), ".  Only: ", gflops 
            endif
-
          ENDIF 
  
          DEALLOCATE(a)
