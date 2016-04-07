@@ -3,8 +3,8 @@
   "flow_rate" : 1.0,
   "velocity" : 1.0,
   "alpha" : [
-    0.22, 
-    0.22,
+    0.36, 
+    0.36,
     0.0
   ],
   "root_mesh": [
@@ -37,9 +37,9 @@
   "max_fft_procs": 0,
   "cps": -2.0,
   "shape_mesh": [
-    128,
-    128,
-    1024
+    64,
+    64,
+    256
   ],
   "order": 4,
   "tolabs": 0.0e-08,
@@ -57,11 +57,11 @@
   "extent_mesh": [
     0.5,
     0.5,
-    24.0
+    12.0
   ],
   "toldiv": 1.0e-08,
   "dim": 3,
-  "procs": 2048,
+  "procs": 128,
   "back_bound": "W",
   "io_step": 512.0,
   "viscosity": 1.0e-5,
