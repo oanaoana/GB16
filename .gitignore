@@ -6,3 +6,13 @@ SIZE
 DONE
 *.out
 *log*
+nektester
+SESSION.NAME
+*.F90
+*.tgz
+*.usr
+*.rea
+nek5000
+makefile
+obj
+*.map
