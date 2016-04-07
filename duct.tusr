@@ -49,7 +49,7 @@ module usr
 
     Re = flow_rate * diameter / viscosity
 
-    if (Re < 2000 .or. .not. use_colebrook) then
+    if (Re < 3000 .or. .not. use_colebrook) then
       darcy_factor = darcy / Re
       return
     endif
@@ -260,7 +260,7 @@ end module usr
        call get_base_flow()
        dt_old = dt; bd_old = bd(1)
     endif
-    if (mod(istep, 32) == 0) call runstat()
+    if (istep > 0 .and. mod(istep, 32) == 0) call runstat()
 
     tmax = glamax(t, lx1*ly1*lz1*lelt)
     if (nid == 0) write(*,*) "Maximum scalar", tmax
