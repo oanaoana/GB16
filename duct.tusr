@@ -262,12 +262,6 @@ end module usr
     endif
     if (istep > 0 .and. mod(istep, 32) == 0) call runstat()
 
-    tmax = glamax(t, lx1*ly1*lz1*lelt)
-    if (nid == 0) write(*,*) "Maximum scalar", tmax
-    umax = glamax(vx, lx1*ly1*lz1*lelt)
-    vmax = glamax(vy, lx1*ly1*lz1*lelt)
-    wmax = glamax(vz, lx1*ly1*lz1*lelt)
-    if (nid == 0) write(*,*) "Maximum velocity", umax, vmax, wmax
     ttol = glsum(t(:,:,:,:,1) * bm1, lx1*ly1*lz1*lelt)
     wtol = glsum(vz * bm1, lx1*ly1*lz1*lelt)
     real_rate = wtol / {extent_mesh[2]}
