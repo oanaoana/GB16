@@ -17,7 +17,7 @@
   "tolrel": 0.0e-04,
   "front_bound": "W",
   "wait_vel": 2.0,
-  "io_files": -3072.0,
+  "io_files": -4096.0,
   "dealiasing_order": 6,
   "right_bound": "W",
   "bottom_bound": "P",

@@ -31,7 +31,7 @@
     1.0
   ],
   "conductivity": 1.0e-5,
-  "dt": 1e-4,
+  "dt": 1e-2,
   "left_bound": "W",
   "num_steps": 8.0,
   "max_fft_procs": 0,

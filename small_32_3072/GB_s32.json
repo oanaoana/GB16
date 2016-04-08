@@ -31,7 +31,7 @@
     1.0
   ],
   "conductivity": 1.0e-5,
-  "dt": 1e-4,
+  "dt": 1e-2,
   "left_bound": "W",
   "num_steps": 8.0,
   "max_fft_procs": 0,
@@ -45,7 +45,7 @@
   "tolabs": 0.0e-08,
   "nvel": 4,
   "uservp": 0,
-  "dt_initial": 1e-04,
+  "dt_initial": 1e-05,
   "end_time": 0.0,
   "restart": 0.0,
   "top_bound": "P",
