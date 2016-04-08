@@ -26,7 +26,7 @@ echo "srun --ntasks=$(( ${3} * ${4})) --hint=nomultithread --ntasks-per-node=${4
 echo "touch DONE" >> tmp.job
 rm -f DONE
 here=`pwd`
-jobid=`sbatch -A k1123 -D $here  -x nid05407 tmp.job 2>&1 | egrep -o -e "\b[0-9]+$"`
+jobid=`sbatch -A k1123 -D $here tmp.job 2>&1 | egrep -o -e "\b[0-9]+$"`
 
 echo $jobid
 echo $jobid > ${1}.error
