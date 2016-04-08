@@ -279,9 +279,9 @@ end module usr
       if (nid == 0) write(*,*) "Adjusting flow by ", delta_rate
     endif
 
-    if (nid == 0) write(*,*) "Flow rate:", &
-                              real_rate ,   &
+    if (nid == 0) write(*,'(A,F14.3,A,F14.3)') "Re = ", &
                               real_rate * diameter / viscosity, &
+                              "   Re_tau = ", &
                               sqrt(abs(total_force)) * diameter**(3./2.) / (4. * viscosity)
 
 
