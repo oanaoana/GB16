@@ -1,0 +1,9 @@
+#PBS -l nodes=1024,walltime=0:30:00
+#PBS -N NekTester_1024
+#PBS -j oe 
+
+module load craype-hugepages2M
+export MPICH_USE_DMAPP_COLL=1
+cd $PBS_O_WORKDIR
+aprun -n 32768 -N 32 -j 1 --ss --cc cpu ./nektester
+
