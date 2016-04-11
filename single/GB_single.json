@@ -37,9 +37,9 @@
   "max_fft_procs": 0,
   "cps": 0.0,
   "shape_mesh": [
-    8,
-    8,
-    32
+    16,
+    16,
+    8
   ],
   "order": 16,
   "tolabs": 0.0e-08,
@@ -57,13 +57,13 @@
   "extent_mesh": [
     0.5,
     0.5,
-    12.0
+    2.0
   ],
   "toldiv": 1.0e-08,
   "dim": 3,
   "procs": 4,
   "back_bound": "W",
   "io_step": 512.0,
-  "viscosity": 0.0005,
+  "viscosity": 0.0002,
   "num_fields": 2
 }
