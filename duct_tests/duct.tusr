@@ -1,0 +1,990 @@
+module usr
+  use kinds, only : DP
+  implicit none
+
+  real(DP), allocatable :: base_flow(:,:,:,:)
+  real(DP) :: base_rate = 0._dp
+  real(DP) :: base_force = 0._dp
+  real(DP) :: force_z = 0._dp
+  real(DP) :: force_laminar = 0._dp
+
+  real(DP) :: gamma
+  real(DP) :: flow_rate = {flow_rate}
+  real(DP) :: diameter = ({extent_mesh[0]}) - ({root_mesh[0]})
+  real(DP) :: viscosity = {viscosity}
+
+
+  contains
+
+  real(DP) FUNCTION COLEBROOK(R,K)
+  ! F = COLEBROOK(R,K) computes t h e Darcy−Weisbach f r i c t i o n
+  ! f a c t o r a c c o r d i n g t o t h e Co l e b r o o k−White f o r m u l a .
+  ! R : Reynold ’ s number .
+  ! K : Roughness h e i g h t 
+  ! From Efficient Resolution of the Colebrook Equation, Didier Clamond, DOI: 10.1021/ie801626g
+
+    IMPLICIT NONE
+    real(DP) :: R, K, F , E , X1 , X2
+    real(DP) :: T = 1._dp / 3._dp
+    X1 = K * R * 0.123968186335417556_dp
+    X2 = LOG(R) - 0.779397488455682028_dp
+
+    F = X2 - 0.2_dp
+    E = (LOG( X1+F) - 0.2_dp) / ( 1.0_dp+X1+F)
+    F = F - ( 1.0_dp+X1+F+0.5_dp*E)*E*( X1+F ) / ( 1.0_dp+X1+F+E*( 1.0_dp+E*T) )
+    IF ( ( X1+X2 ) < ( 5.7_dp ) ) THEN
+      E = (LOG( X1+F)+F-X2 ) / ( 1.0_dp+X1+F)
+      F = F - ( 1.0_dp+X1+F+0.5_dp*E)*E*( X1+F) / ( 1.0_dp+X1+F+E * ( 1.0_dp+E*T) )
+    ENDIF
+    F = 1.151292546497022842_dp / F
+    COLEBROOK = F*F
+    return
+  end function colebrook
+
+
+  real(DP) function darcy_factor(use_colebrook)
+    real(DP), parameter :: darcy = 56.908
+    real(DP) :: Re
+    logical :: use_colebrook
+
+    Re = flow_rate * diameter / viscosity
+
+    if (Re < 3000 .or. .not. use_colebrook) then
+      darcy_factor = darcy / Re
+      return
+    endif
+
+    darcy_factor = colebrook(Re,0._dp)
+    
+    return 
+  end function darcy_factor
+
+
+  subroutine get_base_flow()
+    use kinds, only : DP
+    use parallel, only : nid
+    use size_m, only : nx1, ny1, nz1, nelv
+    use soln, only : vx, vy, vz, t
+    use soln, only : v3mask, vmult
+    use soln, only : tmask, tmult
+    use soln, only : vdiff, vtrans
+    use geom, only : binvm1, bm1
+    use geom, only : xm1, ym1
+    use solver, only : hsolve, approx_space
+    use ds, only : dssum
+    use tstep, only : pi
+    implicit none
+
+    real(DP), allocatable :: rhs(:,:,:,:)
+    real(DP), allocatable :: h1(:,:,:,:), h2(:,:,:,:)
+    real(DP), external :: glsum
+    type(approx_space) :: apx
+
+    if (.not. allocated(base_flow)) then
+      allocate(base_flow(nx1,ny1,nz1,nelv))
+    endif
+
+    allocate(rhs(nx1,ny1,nz1,nelv))
+    allocate(h1(nx1,ny1,nz1,nelv))
+    allocate(h2(nx1,ny1,nz1,nelv))
+
+    call sethlm(h1, h2, -1)
+    
+    base_force = 1._dp
+    rhs = base_force * bm1 * vtrans(:,:,:,:,1)  * v3mask
+    call hsolve('BASE',base_flow,rhs,h1,h2,v3mask,vmult,1,{tolhelm},256,3 &
+        ,apx,binvm1)
+
+    base_rate = glsum(base_flow * bm1, nx1*ny1*nz1*nelv) / ({extent_mesh[2]})
+
+    deallocate(h1, h2, rhs)
+
+  end subroutine get_base_flow
+
+end module usr
+
+!-----------------------------------------------------------------------
+    subroutine uservp(ix,iy,iz,eg) ! set variable properties
+
+    return
+    end subroutine uservp
+
+    subroutine userf(ix,iy,iz,ieg)
+   
+    use nekuse, only : x, y, z, ffx, ffy, ffz, temp
+    use kinds, only : DP
+    use tstep, only : time
+    use usr, only : force_z
+    use tripf
+    use parallel
+    implicit none
+
+!     Note: this is an acceleration term, NOT a force!
+!     Thus, ffx will subsequently be multiplied by rho(x,t).
+
+    integer :: ix, iy, iz, ieg, iel, iii,i 
+    real(DP) ::  dstar
+    real(DP) :: x0, y0, z0, r,yscale,zscale,xscale,smf,xt,step
+      
+      dstar = wallpar(5)
+     
+      ffx = 0.0 
+      ffy = 0.0
+      ffz = 0.0
+
+      do i = 1,nwalls
+!     Tripping in x direction
+!         iii= mod(ieg-1,nelgv/nnelx1x2(i))
+!         zscale = ((z-tripz(i))/(dstar*pwallpar(3,1,i)))**2
+!         yscale = ((y-tripy(i))/(dstar*pwallpar(2,1,i)))**2
+!         ffy = ffy + exp(-yscale - zscale) * fzt1(ix+iii*lx1,i)
+!ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+!     Tripping in z direction
+!         iii = (ieg-1)/(nnelx1x2(i))
+!         xscale = ((x-tripx(i))/(dstar*pwallpar(1,1,i)))**2
+!         yscale = ((y-tripy(i))/(dstar*pwallpar(2,1,i)))**2
+!         ffy = ffy + exp(-xscale - yscale) * fzt1(iz+iii*lz1,i)
+!cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+!     Tripping in y direction
+!         iii = mod(ieg-1,Nelx*Nely)/Nelx
+!         xscale = ((x-tripx(i))/(dstar*pwallpar(1,1,i)))**2
+!         zscale = ((z-tripz(i))/(dstar*pwallpar(3,1,i)))**2
+!         ffx = ffx + exp(-xscale - zscale) * fzt1(iy+iii*ly1,i)
+!cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+!     Tripping in x and y directions
+!     First two walls tripped in x
+         if (i<=2 .or. (i>=5.and.i<=6).or. (i>=9.and.i<=10)) then
+!            if (nid.eq.0) write(*,*) 'Wall value',i
+            iii= mod(ieg-1,nelgv/nnelx1x2(i))
+            zscale = ((z-tripz(i))/(dstar*pwallpar(3,1,i)))**2
+            yscale = ((y-tripy(i))/(dstar*pwallpar(2,1,i)))**2
+            !ffy = ffy + exp(-yscale - zscale) * fzt1(ix+iii*lx1,i)
+         else
+!            if (nid.eq.0) write(*,*) 'Wall value',i
+            iii = mod(ieg-1,Nelx*Nely)/Nelx
+            xscale = ((x-tripx(i))/(dstar*pwallpar(1,1,i)))**2
+            zscale = ((z-tripz(i))/(dstar*pwallpar(3,1,i)))**2
+            !ffx = ffx + exp(-xscale - zscale) * fzt1(iy+iii*ly1,i)
+         endif
+!cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+
+      enddo
+
+!     Smoothing at the corners
+      if (x.ge.1.-smth) then
+         xt=1/smth*(x-(1.-smth))
+         smf=1.-step(xt)
+         !ffy=smf*ffy
+      endif
+      if (y.ge.1.-smth) then 
+         xt=1/smth*(y-(1.-smth))
+         smf=1.-step(xt)
+         !ffx=smf*ffx
+      endif
+      if (x.le.smth-1.) then
+         xt=1/smth*(x+1)
+         smf=step(xt)
+         !ffy=smf*ffy
+      endif
+      if (y.le.smth-1.) then
+         xt=1/smth*(y+1)
+         smf=step(xt)
+         !ffx=smf*ffx
+      endif
+      
+      
+!     for debugging, put forcing term in Temprature array
+!     and outpost T
+      iel = gllel(ieg)
+!c      T(ix,iy,iz,iel,1) = ffy
+!c      T(ix,iy,iz,iel,1) = ffx
+!c      T(ix,iy,iz,iel,1) = ffx+ffy
+           
+      return
+      end subroutine userf
+!-----------------------------------------------------------------------
+    subroutine userq(ix,iy,iz,eg) ! set source term
+    use size_m
+    use nekuse
+    use usr, only : gamma
+    implicit none
+
+    integer :: ix, iy, iz, eg
+    qvol   = gamma * uz
+
+    return
+    end subroutine userq
+!-----------------------------------------------------------------------
+    subroutine userq2(q) ! set source term
+
+    return
+    end subroutine userq2
+!-----------------------------------------------------------------------
+    subroutine userbc(ix,iy,iz,iside,ieg) ! set up boundary conditions
+    use nekuse, only : ux, uy, uz, temp, x, y, z
+
+    ux = 0.0
+    uy = 0.0
+    uz = 0.0
+    temp = 0.0
+
+    return
+    end subroutine userbc
+!-----------------------------------------------------------------------
+    subroutine useric(ix,iy,iz,eg) ! set up initial conditions
+    use kinds, only : DP
+    use parallel, only : nid
+    use usr, only : flow_rate, diameter, viscosity, darcy_factor
+    use usr, only : force_z, gamma, force_laminar
+    use nekuse, only : x, y, z, ux, uy, uz, temp
+    use tstep, only : pi
+    implicit none
+    integer :: ix, iy, iz, eg
+    integer :: i, j
+    real(DP) :: prefac
+    real(DP) :: kx, ky
+
+    ! Initial conditions: laminar profile
+    if (force_laminar == 0._dp) then
+      force_laminar = flow_rate**2. * darcy_factor(.true.) / (2. * diameter**2.) 
+      if (nid == 0) write(*,*) "Expecting Re_tau = ", sqrt(abs(force_laminar)) * diameter**(3./2.) / (4. * viscosity)
+      force_laminar = flow_rate**2. * darcy_factor(.false.) / (2. * diameter**2.) 
+    endif
+    prefac = 16 * force_laminar / viscosity
+    force_z = force_laminar
+    gamma = force_laminar
+    uz = 0._dp
+    temp = 0._dp
+    do i = 0, 6
+      kx = (2*i+1) * pi
+      do j = 0, 6
+        ky = (2*j+1) * pi
+        uz = uz + (-1)**(i+j) * cos(kx * x) * cos(ky * y)/ kx / ky / (kx**2. + ky**2.) 
+        temp = temp + (-1)**(i+j) * cos(kx * x) * cos(ky * y) / (kx**2. + ky**2.)**2. / kx / ky
+      enddo
+    enddo
+    uz = uz * prefac
+    temp = temp * prefac * gamma / {conductivity}
+
+    ! nothing in the span-wise direction
+    ux=0.
+    uy=0.
+
+    return
+    end subroutine useric
+!-----------------------------------------------------------------------
+    subroutine userchk()
+    use kinds, only : DP
+    use size_m, only : lx1, ly1, lz1, lelt
+    use tstep, only : istep
+    use input, only : param, ifxyo
+    use parallel, only : nid
+    use soln, only : vx, vy, vz, pr, t
+    use geom, only : bm1
+    use usr, only : force_z, diameter, viscosity, flow_rate
+    use usr, only : get_base_flow
+    use usr, only : base_flow, base_rate, base_force
+    use tstep, only : dt, ab, bd
+    implicit none
+
+    real(DP), external :: glamax, glsum
+    real(DP) :: tmax, umax, vmax, wmax, ttol, wtol
+    real(DP) :: real_rate, delta_rate, relaxation_factor
+    real(DP) :: total_force
+    real(DP), save :: dt_old = 0._dp, bd_old = 0._dp
+
+    if (param(69) < 1 .and. istep == 0) call outpost(vx,vy,vz,pr,t,'   ')
+    ifxyo = .false.
+    if (istep >= 1 .and. (abs(bd(1)-bd_old) + abs(dt - dt_old) > 1.e-9)) then
+       call get_base_flow()
+       dt_old = dt; bd_old = bd(1)
+    endif
+    if (istep > 0 .and. mod(istep, 32) == 0) call runstat()
+
+    ttol = glsum(t(:,:,:,:,1) * bm1, lx1*ly1*lz1*lelt)
+    wtol = glsum(vz * bm1, lx1*ly1*lz1*lelt)
+    real_rate = wtol / {extent_mesh[2]}
+
+    if (istep >= 1) then
+      delta_rate = (flow_rate - real_rate) / base_rate
+      vz = vz + delta_rate * base_flow
+      total_force =  force_z + delta_rate * base_force 
+      if (nid == 0) write(*,*) "Adjusting flow by ", delta_rate
+    endif
+
+    if (nid == 0) write(*,'(A,F14.3,A,F14.3)') "Re = ", &
+                              real_rate * diameter / viscosity, &
+                              "   Re_tau = ", &
+                              sqrt(abs(total_force)) * diameter**(3./2.) / (4. * viscosity)
+
+    !call checkpoint
+    !call tripf_sub
+
+
+    return
+    end subroutine userchk
+!-----------------------------------------------------------------------
+    subroutine usrdat()   ! This routine to modify element vertices
+      use kinds, only : DP
+      use parallel, only : nid
+      use size_m, only : nelt
+      use input, only : xc, yc, zc
+      use mesh, only : shape_x
+      use mesh, only : ticks_x, ticks_y, ticks_z
+      use parallel, only : lglel
+      use tstep, only : pi
+      implicit none
+
+      integer :: iel, ieg
+      integer :: i
+      integer :: ix(3)
+
+
+      !if ({alpha[0]} >= 0) then
+      !  do i = 1, shape_x(1)-1
+      !    ticks_x(i) = .5*sin(ticks_x(i)*(pi - 2.*{alpha[0]})) / sin(pi/2. - {alpha[0]})
+      !  enddo
+      !endif
+  
+     !if (nid == 0) write(*,*) shape_x(1)
+
+      ticks_x=(/-1.00000000000000, -0.980785280000000, -0.923879533000000, -0.831469612000000, -0.707106781000000, &
+               -0.555570233000000, -0.382683432000000, -0.195090322000000, 0.000000000000000, 0.195090322000000, &
+                 0.382683432000000, 0.555570233000000, 0.707106781000000,  0.831469612000000, 0.923879533000000, &
+                0.980785280000000, 1.0000000000000000 /)
+      if (nid == 0) write(*,*) ticks_x
+
+      !if ({alpha[1]} >= 0) then
+      !  do i = 1, shape_x(2)-1
+      !    ticks_y(i) = .5*sin(ticks_y(i)*(pi - 2.*{alpha[1]})) / sin(pi/2. - {alpha[1]})
+      !  enddo
+      !endif
+      ticks_y=(/-1.00000000000000, -0.980785280000000, -0.923879533000000, -0.831469612000000, -0.707106781000000, &
+               -0.555570233000000, -0.382683432000000, -0.195090322000000, 0.000000000000000, 0.195090322000000, &
+                 0.382683432000000, 0.555570233000000, 0.707106781000000,  0.831469612000000, 0.923879533000000, &
+                0.980785280000000, 1.0000000000000000 /)
+      !if (nid == 0) write(*,*) ticks_y
+
+      do iel = 1, nelt
+        ieg = lglel(iel)
+
+        ix(1) = mod(ieg - 1, shape_x(1))
+        ix(2) = mod((ieg-1)/shape_x(1), shape_x(2))
+        ix(3) = mod((ieg-1)/(shape_x(1)*shape_x(2)), shape_x(3))
+
+        XC(1,iel) = ticks_x(ix(1))
+        XC(2,iel) = ticks_x(ix(1)+1)
+        XC(3,iel) = ticks_x(ix(1)+1)
+        XC(4,iel) = ticks_x(ix(1))
+        XC(5,iel) = ticks_x(ix(1))
+        XC(6,iel) = ticks_x(ix(1)+1)
+        XC(7,iel) = ticks_x(ix(1)+1)
+        XC(8,iel) = ticks_x(ix(1))
+
+        YC(1,iel) = ticks_y(ix(2))
+        YC(2,iel) = ticks_y(ix(2))
+        YC(3,iel) = ticks_y(ix(2)+1)
+        YC(4,iel) = ticks_y(ix(2)+1)
+        YC(5,iel) = ticks_y(ix(2))
+        YC(6,iel) = ticks_y(ix(2))
+        YC(7,iel) = ticks_y(ix(2)+1)
+        YC(8,iel) = ticks_y(ix(2)+1)
+
+        ZC(1,iel) = ticks_z(ix(3))
+        ZC(2,iel) = ticks_z(ix(3))
+        ZC(3,iel) = ticks_z(ix(3))
+        ZC(4,iel) = ticks_z(ix(3))
+        ZC(5,iel) = ticks_z(ix(3)+1)
+        ZC(6,iel) = ticks_z(ix(3)+1)
+        ZC(7,iel) = ticks_z(ix(3)+1)
+        ZC(8,iel) = ticks_z(ix(3)+1)
+      !write(*,*) 'el boundary: ', xc(1,iel), yc(1,iel), zc(i,iel)
+      enddo
+
+   
+
+    return
+    end subroutine usrdat
+!-----------------------------------------------------------------------
+    subroutine usrdat2()  ! This routine to modify mesh coordinates
+     use kinds, only : DP
+     implicit none
+
+     ! real dum(3)
+
+!      call user_param
+      !call uprm_read            ! New user parameter read function
+
+    return
+    end subroutine usrdat2
+!-----------------------------------------------------------------------
+     subroutine readwallfile
+
+      use kinds, only : DP
+      use parallel, only : nid
+      use size_m, only : nelt
+      use input, only : xc, yc, zc, session
+      use parallel, only : lglel, WDSIZE,ISIZE,CSIZE,np
+      use tripf
+      use string, only : ltrunc
+      use mpif, only : mpi_byte
+      implicit none
+            
+      integer ::  len,ierr,i,k,j
+      character(132) :: wallfname
+      character(1) :: wallfnam1(132)
+      equivalence (wallfnam1,wallfname)
+
+      ierr = 0
+      if (nid .eq. 0) then
+         call blank(wallfname,132)
+         len = ltrunc(SESSION,132)
+         call chcopy(wallfnam1(1),SESSION,len)
+         call chcopy(wallfnam1(len+1),'.wall',5)
+         open(unit=75,file=wallfname,iostat=ierr,status='old')
+         write(*,*) 'wall file', wallfname
+         read(75,*,iostat=ierr)
+         read(75,*,iostat=ierr) nwalls
+         read(75,*,iostat=ierr) nwallpar
+         read(75,*,iostat=ierr) npwallpar
+      endif
+      call err_chk(ierr,'Error reading .wall file.$')
+      call bcast(nwalls, ISIZE)
+      call bcast(nwallpar, ISIZE)
+      call bcast(npwallpar, ISIZE)
+
+      if((nwalls>maxwalls).or.(nwallpar > maxwallpar).or.(npwallpar > maxpwallpar)) then
+         if(nid == 0) then
+           write(6,*) 'Too many walls/parameters in ',wallfname
+         endif
+         call exitt
+      end if
+      if (nid == 0) then
+!   read global parameters
+        read(75,*,iostat=ierr)
+        do i=1,nwallpar
+          read(75,*,iostat=ierr) wallpar(i)
+        end do
+!   read wall definitions and parameters
+        read(75,*,iostat=ierr)
+        read(75,*,iostat=ierr)
+        do i=1,nwalls
+          read(75,*,iostat=ierr) direction(i)
+          read(75,*,iostat=ierr) tripx(i),tripy(i),tripz(i)
+          do j=1,npwallpar
+            read(75,*,iostat=ierr) (pwallpar(k,j,i), k=1,3)
+          end do
+        end do
+      end if
+      call err_chk(ierr,'Not enough walls.$')
+      call bcast(wallpar,nwallpar*WDSIZE)
+      call bcast(direction,nwalls*CSIZE)
+      call bcast(tripx,nwalls*WDSIZE)
+      call bcast(tripy,nwalls*WDSIZE)
+      call bcast(tripz,nwalls*WDSIZE)
+      call bcast(pwallpar(1,1,1),3*npwallpar*nwalls*WDSIZE)
+
+!      if (nid.eq.0) write(*,*) 'Directions',direction
+     
+      end subroutine readwallfile
+
+      subroutine znekgen(wall)
+
+!      include 'USERPAR'         ! l2freq, FIXGEOM, NEW_DT
+      
+      use kinds, only : DP,r4
+      use parallel
+      !use input, only : dt
+      use soln, only : T
+      use mesh, only : shape_x,ticks_x, ticks_y, ticks_z
+      use parallel!, only : lglel, WDSIZE,np, nekcomm,
+      use tstep, only : istep, dt
+      use geom
+      use tripf
+      use mpif, only : mpi_byte
+
+      implicit none
+ 
+      real(DP) :: dx1(lx1,ly1,lz1,lelv), bouxm1(lx1,ly1,lz1,lelv)
+      real(DP) :: dx2(lx1,ly1,lz1,lelv), bouxm2(lx1,ly1,lz1,lelv)
+      real(DP) :: dr2(lx1,ly1,lz1,lelv), bouxm3(lx1,ly1,lz1,lelv)
+      real(DP) :: tripx1, tripx2
+
+      real(DP) :: vals(maxlxyz,nelv), valsSort(maxlxyz,nelv)
+      real(DP) :: valsf(nelv), valsfSort(nelv)
+      real(DP) :: gvalsf(np*lelv),gvalsfw(np*lelv),gvalsfSort(np*lelv)
+      integer :: valsfw(nelv), gvalsfi(np*lelv), wall
+      real(DP) :: gCloseGLL(2), lCloseGLL, realTemp
+      real(DP) :: znekw(lelv*maxlxyz)
+      real(r4) ::  buf(1)
+      integer :: lCloseGLLid, cGLLnid, intTemp, ierr
+      integer :: cvals, cvals1, cvals2, myit, itx, ity, itz
+      integer :: i, j, ix, iy, iz, k
+
+      itx = lx1
+      ity = ly1
+      itz = lz1
+!   compute the differences
+      if (direction(wall) .eq. 'x') then
+         bouxm1 = ym1
+         bouxm2 = zm1
+         bouxm3 = xm1
+         myit = itx
+         tripx1 = tripy(wall)
+         tripx2 = tripz(wall)
+         itx = 1
+      elseif (direction(wall) .eq. 'y') then
+         bouxm1 = xm1
+         bouxm2 = zm1
+         bouxm3 = ym1
+         myit = ity
+         tripx1 = tripx(wall)
+         tripx2 = tripz(wall)
+         ity = 1
+      else
+         bouxm1 = xm1
+         bouxm2 = ym1
+         bouxm3 = zm1
+         tripx1 = tripx(wall)
+         tripx2 = tripy(wall)
+         myit = itz
+         itz = 1
+      endif
+
+      dx1 = tripx1 - bouxm1
+      dx2 = tripx2 - bouxm2
+      dr2 = dx1*dx1 + dx2*dx2
+      lCloseGLL = dr2(1,1,1,1)
+      lCloseGLLid = 1
+
+!   calculate the local minimum distance
+      do j = 1, nelv
+      do iz = 1,itz
+        do iy = 1,ity
+          do ix = 1,itx
+            if (dr2(ix,iy,iz,j) .lt. lCloseGLL) then
+              lCloseGLL = dr2(ix,iy,iz,j)
+              lCloseGLLid = ix + lx1*(iy-1) + lx1*ly1*(iz-1) &
+                           + (j-1)*lx1*ly1*lz1
+            end if
+          end do
+        end do
+      end do
+      end do
+      gCloseGLL(1) = lCloseGLL
+
+!      print *, 'ISM', nid, lCloseGLL
+!   pick the global minimum distance
+      call gop(gCloseGLL(1),realTemp,'m  ',1)
+
+!   chose a proc who has this distance
+      if (lCloseGLL .eq. gCloseGLL(1)) then
+         cGLLnid = nid
+      else
+         cGLLnid = 0
+      end if
+      call igop(cGLLnid,intTemp,'M  ',1)
+
+!   share its x,y value to everyone
+      if (cGLLnid .eq. nid) then
+         gCloseGLL(1) = bouxm1(lCloseGLLid,1,1,1)
+         gCloseGLL(2) = bouxm2(lCloseGLLid,1,1,1)
+      else
+         gCloseGLL(1) = 0.
+         gCloseGLL(2) = 0.
+      end if
+!      print *, 'ISM', nid, gCloseGLL(1), gCloseGLL(2),tripx1,tripx2
+      call mpi_bcast (gCloseGLL(1),2*WDSIZE,mpi_byte,cGLLnid,nekcomm,ierr)
+      !call bcastn0(gCloseGLL(1),2*WDSIZE,cGLLnid)
+
+!      print *, 'ISM', nid, gCloseGLL(1), gCloseGLL(2),tripx1,tripx2
+!   sort the first z-value of each element containing the tripping points
+      cvals = 0
+      do j = 1,nelv
+       do iz = 1, itz
+         do iy = 1, ity
+           do ix = 1, itx
+             if (bouxm1(ix,iy,iz,j) .eq. gCloseGLL(1) &
+              .and. bouxm2(ix,iy,iz,j) .eq. gCloseGLL(2)) then
+               cvals = cvals + 1
+               if (direction(wall) .eq. 'x') then
+                  do k=1,myit
+                     vals(k,cvals) = bouxm3(k,iy,iz,j)
+                  enddo
+               elseif (direction(wall) .eq. 'y') then
+                  do k=1,myit
+                     vals(k,cvals) = bouxm3(ix,k,iz,j)
+                  enddo
+               else
+                  do k=1,myit
+                     vals(k,cvals) = bouxm3(ix,iy,k,j)
+                  enddo
+               end if
+               valsf(cvals) = bouxm3(ix,iy,iz,j)
+               goto 100
+             end if
+           end do
+         end do
+       end do
+ 100   continue
+      end do
+!  subroutine sorts(xout,xin,work,n)
+!      real xout(1),xin(1),work(1)
+!      call copy(xout,xin,n)
+!      call sort(xout,work,n)
+!      return
+!      end
+
+      !call sorts(valsfSort,valsf,valsfw,cvals)
+      call copy(valsfSort,valsf,cvals)
+      call sort(valsfSort,valsfw,cvals)
+
+
+!      print *, 'ISM', nid, cvals, valsfSort(1:cvals)
+!   remove duplicate and share with everyone
+      gvalsf = huge(1.0)
+      if (cvals .gt. 0) then
+         cvals1 = 1
+!         valsSort(:,1) = vals(:,valsfw(1))
+         do k=1,maxlxyz
+            valsSort(k,1) = vals(k,valsfw(1))
+         enddo
+         gvalsf(1 + nid*lelv) = valsfSort(1)
+      else
+         cvals1 = 0
+      end if
+      do i = 2, cvals
+         if(valsfSort(i) .ne. valsfSort(i-1)) then
+           cvals1 = cvals1 + 1
+           do k=1,maxlxyz
+              valsSort(k,cvals1) = vals(k,valsfw(i))
+           enddo
+           gvalsf(cvals1 + nid*lelv) = valsfSort(i)
+         end if
+      end do
+      call gop(gvalsf, gvalsfw,'m  ', np*lelv)
+
+!     Adhoc fix of the code. Only valid for square duct
+      
+      kpts(wall)=Nelx*lx1
+      nnelx1x2(wall)=Nelx*Nelz
+
+!     Adhoc fix ends here. Only valid for square duct
+      
+!   define kpts (lx * number of direction elements), nnelx1x2 (nx1*nx2), znek
+
+      call copy(gvalsfSort,gvalsf,np*lelv)
+      call sort(gvalsfSort,gvalsfi,np*lelv)
+!      print *, 'ISM1', nid, cvals, gvalsfSort(1:10)
+      cvals2 = 1
+      do i = 1,np*lelv
+        if (gvalsfSort(i) .ne. gvalsfSort(cvals2)) then
+           cvals2 = cvals2 + 1
+           gvalsfSort(cvals2) = gvalsfSort(i)
+        endif
+        if (i .ne. cvals2) gvalsfSort(i) = huge(1.0)
+!        gvalsfSort(i) = huge(1.0)
+      end do
+      
+!      print *, 'ISM2', nid, cvals, gvalsfSort(1:10)
+
+      do k=1,lelv*maxlxyz
+         znek(k,wall) = huge(1.0)
+      enddo
+      
+      cvals2 = 1
+      do i = 1, lelv
+!     Part of the code to be fixed
+!        if (gvalsfSort(i) .eq. huge(1.0)) then
+!          print *, 'ISM fini', i, lz1
+!          kpts(wall) = (i-1)*myit
+!          nnelx1x2(wall) = nelgv/(i-1)
+!          exit
+!        end if
+        if (gvalsf(cvals2 + nid*lelv) .eq. gvalsfSort(i)) then
+          do j = 1,myit !i*lz1,(i+1)*lz1
+             znek((i-1)*myit+j,wall) = valsSort(j,cvals2)
+          end do
+          cvals2 = cvals2 + 1
+        end if
+      end do
+      call gop(znek(1,wall), znekw,'m  ', kpts(wall))
+
+      if (nid .eq. 0) then
+      do i=1,kpts(wall)
+         print *,'ISM', znek(i,wall)
+      end do
+      end if
+!   Done!
+
+!ccccccccccccccc
+!   print the values for script processing (no more needed)
+
+!      if (nid .eq. 0) write (6,"('ISM2',x,i7)") nelgv
+!      if (nid .eq. 0) write (6,"('ISM3',x,i7)") lz1
+!      write(clz1,"(i2)") lz1
+!      do k = 1,nelv
+!        do i = 1, lx1*ly1
+!          if (xm1(i,1,1,k) .eq. gCloseGLL(1)
+!     $       .and. ym1(i,1,1,k) .eq. gCloseGLL(2)) then
+!           write (6,"('ISM1'," // adjustr(clz1) // "(x,g25.16E4))")
+!     $            (zm1(i,1,j,k),j=1,lz1)
+!          end if
+!       end do
+!      end do
+!      call exitt
+
+      return
+      end
+!-----------------------------------------------------------------------
+!      subroutine bcastn0(buf,len,proc)
+!      include 'mpif.h'
+!      use parallel 
+!      common /nekmpi/ nid,np,nekcomm,nekgroup,nekreal
+!      real*4 buf(1)!
+
+!      call mpi_bcast (buf,len,mpi_byte,proc,nekcomm,ierr)
+
+!      return
+!      end
+!-----------------------------------------------------------------------
+      subroutine tripf_sub
+      
+      use kinds, only : DP
+      use size_m
+      use tstep
+      use tripf
+
+      implicit none
+      
+      integer :: k, z,i
+      integer :: num_modes
+      real(DP) :: p,b
+      real(DP) :: tamps, tampt, tdt
+  
+      tamps = wallpar(1)
+      tampt = wallpar(2)
+      tdt   = wallpar(3)
+      num_modes = int(wallpar(4))
+
+!     Generate the time independent part fzt(z,2)
+!     at first iteration
+
+      if (istep.eq.1) then
+
+!     Get random distribution and rescale
+
+         do k=1,nwalls
+!            if (k.le.4) then
+!c               call rand_func(fzt2(1,k),znek(1,k),kpts(k),seed1,
+!c     &              num_modes)
+!c            elseif (k.gt.4.and.k.le.8) then
+!c               call rand_func(fzt2(1,k),znek(1,k),kpts(k),seed2,
+!c     &              num_modes)
+!c            else
+!c               call rand_func(fzt2(1,k),znek(1,k),kpts(k),seed3,
+!c     &              num_modes)
+!c            endif
+            call rand_func(fzt2(1,k),znek(1,k),kpts(k),seed,num_modes)
+            do z=1,kpts(k)
+               fzt2(z,k)=tamps*fzt2(z,k)
+            end do
+         enddo
+         ntdt=-2
+      end if
+
+!c     Generate new time dependent part if necessary
+!c     to be able to recreate the trip of restarted simulations,
+!c     loop from ntdt=-1 up to present trip count.
+!c
+      do i=ntdt+1,int(time/tdt)
+         do k=1,nwalls
+            do z=1,kpts(k)
+               fzt3(z,k)=fzt4(z,k)
+            end do
+         enddo
+         do k=1,nwalls
+!c            if (k.le.4) then
+!c               call rand_func(fzt4(1,k),znek(1,k),kpts(k),seed1,
+!c     &              num_modes)
+!c            elseif (k.gt.4.and.k.le.8) then
+!c               call rand_func(fzt4(1,k),znek(1,k),kpts(k),seed2,
+!c     &              num_modes)
+!c            else
+!c               call rand_func(fzt4(1,k),znek(1,k),kpts(k),seed3,
+!c     &              num_modes)
+!c            endif
+            call rand_func(fzt4(1,k),znek(1,k),kpts(k),seed,num_modes)
+            do z=1,kpts(k)
+               fzt4(z,k)=tampt*fzt4(z,k)
+            enddo
+         enddo
+      enddo
+!c
+!c     Update trip count as actual time divided by time scale
+!c
+      ntdt=int(time/tdt)
+!c
+!c     Generate the z-dependence of the trip
+!c     as a smooth transition between old and new trip vectors
+!c     p is varying from 0 to 1 for a given trip count.
+!c
+      p=(time-real(ntdt)*tdt)/tdt
+      b=p*p*(3.-2.*p)
+      do k=1,nwalls
+         do z=1,kpts(k)
+            fzt1(z,k)=fzt2(z,k)+(1.-b)*fzt3(z,k)+b*fzt4(z,k)
+         enddo
+      enddo
+
+      end subroutine tripf_sub
+
+      subroutine rand_func(rand_vec,zvec,zpts,seed,num_modes)
+      use kinds, only : DP
+      implicit none
+
+      integer ::  seed,k
+      integer :: zpts
+      real(DP) :: zvec(1:zpts),bb
+      real :: rand_vec(zpts)
+
+      real(DP) :: pi
+      parameter (pi = 3.1415926535897932385)
+      integer :: num_modes
+!c      parameter (num_modes = 10)
+!c
+!c     Local variables
+!c
+      integer :: z,m
+      real(DP):: zlength
+      real(DP) :: phase
+      real(DP) :: theta
+!c
+!c     External function
+!c
+      real(DP) :: ran2
+!c
+!c     Compute length of z-interval
+!c
+      zlength = zvec(zpts) - zvec(1)
+      if (zlength .eq. 0.) zlength = 1.
+      do z=1,zpts
+         rand_vec(z) = 0.0
+      enddo
+!c
+!c     Compute m sinus modes
+!c
+      do m=1,num_modes
+         bb = ran2(seed)
+         phase = 2.*pi*bb
+         do z=1,zpts
+            theta = 2.*pi*m*zvec(z)/zlength
+            rand_vec(z) = rand_vec(z) + sin(theta + phase)
+         enddo
+      enddo
+
+      end subroutine rand_func
+
+
+
+      real function ran2(idum)
+!c
+!c     A simple portable random number generator
+!c
+!c     Requires 32-bit integer arithmetic
+!c     Taken from Numerical Recipes, William Press et al.
+!c     gives correlation free random numbers but does not have a very large
+!c     dynamic range, i.e only generates 714025 different numbers
+!c     for other use consult the above
+!c     Set idum negative for initialization
+!c
+      use kinds, only : DP
+      implicit none
+
+      integer :: idum,ir(97),m,ia,ic,iff,iy,j
+      real(DP) :: rm
+      parameter (m=714025,ia=1366,ic=150889,rm=1./m)
+      save iff,ir,iy
+      data iff /0/
+
+      if (idum.lt.0.or.iff.eq.0) then
+!c
+!c     Initialize
+!c
+         iff=1
+         idum=mod(ic-idum,m)
+         do j=1,97
+            idum=mod(ia*idum+ic,m)
+            ir(j)=idum
+         end do
+         idum=mod(ia*idum+ic,m)
+         iy=idum
+      end if
+!c
+!c     Generate random number
+!c
+      j=1+(97*iy)/m
+      iy=ir(j)
+      ran2=iy*rm
+      idum=mod(ia*idum+ic,m)
+      ir(j)=idum
+
+      end function ran2
+!c----------------------------------------------------------------------
+      
+      subroutine usrdat3()
+ 
+      use kinds, only : DP
+      use size_m
+      use tripf
+
+      implicit none
+      
+      real(DP) :: bb, ran2
+      integer :: i
+
+      if (nid.eq.0) write(*,*) 'INITIALIZATION OF TRIP FORCING'
+
+!c     initialize ran2
+!c     
+!c      seed1 = -32
+!c      seed2 = -31
+!c      seed3 = -30
+      seed = -32
+      bb=ran2(seed)
+
+      call readwallfile
+      do i=1,nwalls
+         call znekgen(i)
+      enddo
+      
+      return
+      end
+
+      real function step(x)
+
+!     Smooth step function:
+!     x<=0 : step(x) = 0
+!     x>=1 : step(x) = 1
+!     Non-continuous derivatives at x=0.02 and x=0.98
+
+      
+      use kinds, only : DP
+      implicit none
+      
+      real(DP) :: x
+    
+
+      if (x.le.0.02) then
+         step = 0.0
+      else
+         if (x.le.0.98) then
+            step = 1./( 1. + exp(1./(x - 1.) + 1./x) )
+         else
+            step = 1.
+         end if
+      end if
+
+      end function step
+      
+
