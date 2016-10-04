@@ -158,13 +158,13 @@ end module usr
             iii= mod(ieg-1,nelgv/nnelx1x2(i))
             zscale = ((z-tripz(i))/(dstar*pwallpar(3,1,i)))**2
             yscale = ((y-tripy(i))/(dstar*pwallpar(2,1,i)))**2
-            !ffy = ffy + exp(-yscale - zscale) * fzt1(ix+iii*lx1,i)
+            ffy = ffy + exp(-yscale - zscale) * fzt1(ix+iii*lx1,i)
          else
 !            if (nid.eq.0) write(*,*) 'Wall value',i
             iii = mod(ieg-1,Nelx*Nely)/Nelx
             xscale = ((x-tripx(i))/(dstar*pwallpar(1,1,i)))**2
             zscale = ((z-tripz(i))/(dstar*pwallpar(3,1,i)))**2
-            !ffx = ffx + exp(-xscale - zscale) * fzt1(iy+iii*ly1,i)
+            ffx = ffx + exp(-xscale - zscale) * fzt1(iy+iii*ly1,i)
          endif
 !cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 
@@ -174,22 +174,22 @@ end module usr
       if (x.ge.1.-smth) then
          xt=1/smth*(x-(1.-smth))
          smf=1.-step(xt)
-         !ffy=smf*ffy
+         ffy=smf*ffy
       endif
       if (y.ge.1.-smth) then 
          xt=1/smth*(y-(1.-smth))
          smf=1.-step(xt)
-         !ffx=smf*ffx
+         ffx=smf*ffx
       endif
       if (x.le.smth-1.) then
          xt=1/smth*(x+1)
          smf=step(xt)
-         !ffy=smf*ffy
+         ffy=smf*ffy
       endif
       if (y.le.smth-1.) then
          xt=1/smth*(y+1)
          smf=step(xt)
-         !ffx=smf*ffx
+         ffx=smf*ffx
       endif
       
       
@@ -210,7 +210,7 @@ end module usr
     implicit none
 
     integer :: ix, iy, iz, eg
-    qvol   = gamma * uz
+    qvol   = 1.0!gamma * uz
 
     return
     end subroutine userq
@@ -226,7 +226,7 @@ end module usr
     ux = 0.0
     uy = 0.0
     uz = 0.0
-    temp = 0.0
+    temp = 1.0!0.0
 
     return
     end subroutine userbc
@@ -264,7 +264,7 @@ end module usr
       enddo
     enddo
     uz = uz * prefac
-    temp = temp * prefac * gamma / {conductivity}
+    temp = 1.0!temp * prefac * gamma / {conductivity}
 
     ! nothing in the span-wise direction
     ux=0.
@@ -318,7 +318,7 @@ end module usr
                               sqrt(abs(total_force)) * diameter**(3./2.) / (4. * viscosity)
 
     !call checkpoint
-    !call tripf_sub
+    call tripf_sub
 
 
     return

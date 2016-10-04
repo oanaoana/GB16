@@ -61,7 +61,7 @@
   ],
   "toldiv": 1.0e-08,
   "dim": 3,
-  "procs": 4,
+  "procs": 1,
   "back_bound": "W",
   "io_step": 512.0,
   "viscosity": 0.0004,
